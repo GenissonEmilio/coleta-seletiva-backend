@@ -1,0 +1,250 @@
+{
+  "repositories": [
+    {
+      "name": "GenissonEmilio/coleta-seletiva-backend",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend",
+      "private": true
+    },
+    {
+      "name": "GenissonEmilio/coleta-seletiva-frontend",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-frontend",
+      "private": true
+    }
+  ],
+  "collaborators": [
+    {
+      "repository": "GenissonEmilio/coleta-seletiva-backend",
+      "login": "felipmz",
+      "permission": "write",
+      "status": "convite pendente"
+    },
+    {
+      "repository": "GenissonEmilio/coleta-seletiva-backend",
+      "login": "Jose-Herbert-13",
+      "permission": "write",
+      "status": "convite pendente"
+    },
+    {
+      "repository": "GenissonEmilio/coleta-seletiva-frontend",
+      "login": "felipmz",
+      "permission": "write",
+      "status": "convite pendente"
+    },
+    {
+      "repository": "GenissonEmilio/coleta-seletiva-frontend",
+      "login": "Jose-Herbert-13",
+      "permission": "write",
+      "status": "convite pendente"
+    }
+  ],
+  "milestones": [
+    {
+      "title": "Etapa 1 - Requisitos, protótipos e modelo",
+      "number": 1,
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/milestone/1"
+    },
+    {
+      "title": "Unidade 1 - API REST e persistência",
+      "number": 2,
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/milestone/2"
+    }
+  ],
+  "issues": [
+    {
+      "key": "PLAN-01",
+      "number": 1,
+      "title": "[PLAN-01] Revisar requisitos, atores e decisões da primeira unidade",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/1",
+      "owner": "GenissonEmilio",
+      "assignees": [
+        "GenissonEmilio"
+      ]
+    },
+    {
+      "key": "PLAN-02",
+      "number": 2,
+      "title": "[PLAN-02] Desenhar e revisar o DER e as restrições do banco",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/2",
+      "owner": "felipmz",
+      "assignees": []
+    },
+    {
+      "key": "PLAN-03",
+      "number": 3,
+      "title": "[PLAN-03] Prototipar as telas e revisar os contratos com a equipe",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/3",
+      "owner": "Jose-Herbert-13",
+      "assignees": []
+    },
+    {
+      "key": "API-01",
+      "number": 4,
+      "title": "[API-01] Preparar Java 21, Spring Boot e execução reproduzível",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/4",
+      "owner": "GenissonEmilio",
+      "assignees": [
+        "GenissonEmilio"
+      ]
+    },
+    {
+      "key": "API-02",
+      "number": 5,
+      "title": "[API-02] Implementar migrações PostgreSQL e integridade relacional",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/5",
+      "owner": "felipmz",
+      "assignees": []
+    },
+    {
+      "key": "API-03",
+      "number": 6,
+      "title": "[API-03] Padronizar DTOs, validação, erros e paginação",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/6",
+      "owner": "Jose-Herbert-13",
+      "assignees": []
+    },
+    {
+      "key": "API-04",
+      "number": 7,
+      "title": "[API-04] Implementar moradores e seus endereços",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/7",
+      "owner": "felipmz",
+      "assignees": []
+    },
+    {
+      "key": "API-05",
+      "number": 8,
+      "title": "[API-05] Implementar materiais, unidades e inativação",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/8",
+      "owner": "GenissonEmilio",
+      "assignees": [
+        "GenissonEmilio"
+      ]
+    },
+    {
+      "key": "API-06",
+      "number": 9,
+      "title": "[API-06] Implementar pontos de coleta e disponibilidade",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/9",
+      "owner": "felipmz",
+      "assignees": []
+    },
+    {
+      "key": "API-07",
+      "number": 10,
+      "title": "[API-07] Vincular materiais aceitos e limites aos pontos",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/10",
+      "owner": "felipmz",
+      "assignees": []
+    },
+    {
+      "key": "API-08",
+      "number": 11,
+      "title": "[API-08] Consultar pontos ativos e materiais com filtros públicos",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/11",
+      "owner": "Jose-Herbert-13",
+      "assignees": []
+    },
+    {
+      "key": "API-09",
+      "number": 12,
+      "title": "[API-09] Cadastrar operadores, vínculos e contexto de demonstração",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/12",
+      "owner": "Jose-Herbert-13",
+      "assignees": []
+    },
+    {
+      "key": "API-10",
+      "number": 13,
+      "title": "[API-10] Criar e corrigir solicitação com itens e histórico transacionais",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/13",
+      "owner": "Jose-Herbert-13",
+      "assignees": []
+    },
+    {
+      "key": "API-11",
+      "number": 14,
+      "title": "[API-11] Consultar solicitações, itens e histórico por contexto",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/14",
+      "owner": "Jose-Herbert-13",
+      "assignees": []
+    },
+    {
+      "key": "API-12",
+      "number": 15,
+      "title": "[API-12] Agendar, recusar e cancelar com histórico e versão",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/15",
+      "owner": "GenissonEmilio",
+      "assignees": [
+        "GenissonEmilio"
+      ]
+    },
+    {
+      "key": "API-13",
+      "number": 16,
+      "title": "[API-13] Executar, concluir e reagendar preservando tentativas",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/16",
+      "owner": "felipmz",
+      "assignees": []
+    },
+    {
+      "key": "API-14",
+      "number": 17,
+      "title": "[API-14] Preservar cadastros e bloquear alterações com solicitações abertas",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/17",
+      "owner": "GenissonEmilio",
+      "assignees": [
+        "GenissonEmilio"
+      ]
+    },
+    {
+      "key": "API-15",
+      "number": 18,
+      "title": "[API-15] Garantir concorrência otimista em todas as mutações de solicitação",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/18",
+      "owner": "GenissonEmilio",
+      "assignees": [
+        "GenissonEmilio"
+      ]
+    },
+    {
+      "key": "API-16",
+      "number": 19,
+      "title": "[API-16] Implementar resumo por situação e recolhidos por material/período",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/19",
+      "owner": "Jose-Herbert-13",
+      "assignees": []
+    },
+    {
+      "key": "API-17",
+      "number": 20,
+      "title": "[API-17] Consolidar testes essenciais, integração e cenários de aceite",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/20",
+      "owner": "GenissonEmilio",
+      "assignees": [
+        "GenissonEmilio"
+      ]
+    },
+    {
+      "key": "API-18",
+      "number": 21,
+      "title": "[API-18] Fechar reprodução, dados fictícios, documentação e desempenho",
+      "url": "https://github.com/GenissonEmilio/coleta-seletiva-backend/issues/21",
+      "owner": "felipmz",
+      "assignees": []
+    }
+  ],
+  "verified_at": "2026-11-01T20:56:47.257949-03:00",
+  "source_pdf_sha256": "2d236e9a23b4559ea1d8dde4b28b7ca20da8c8682aebd96ad11cc99a8a05b039",
+  "validation": {
+    "remote_issues": 21,
+    "responsibilities": {
+      "genisson": 7,
+      "felipe": 7,
+      "herbert": 7
+    },
+    "repositories_private": true,
+    "local_document_links": "valid",
+    "issue_dependencies": "valid; no cycles",
+    "application_build": "not applicable; documentation only"
+  }
+}
