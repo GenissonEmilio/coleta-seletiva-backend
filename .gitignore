@@ -1,0 +1,26 @@
+# Artefatos regeneráveis
+target/
+build/
+out/
+*.class
+*.log
+tmp/
+
+# Configuração local e segredos
+.env
+.env.*
+!.env.example
+application-local.properties
+application-local.yml
+application-local.yaml
+
+# IDE e sistema
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Nunca versionar dados locais do PostgreSQL
+.postgres-data/
+pgdata/
