@@ -2,34 +2,89 @@
 
 API acadêmica de Programação Web I para conectar moradores, pontos de coleta e operadores de recolhimento de recicláveis.
 
-**Estado inicial:** planejamento e backlog. O código da aplicação será escrito pela equipe; ainda não há endpoints executáveis, banco provisionado ou testes implementados.
+## Pré-requisitos
 
-## Comece aqui
+- **JDK 21** instalado e configurado no ambiente.
+- **Git** instalado para clonar o repositório e contribuir com o projeto.
+- **PostgreSQL** instalado e em execução, com:
+  - banco de dados criado para a aplicação;
+  - usuário e senha de acesso;
+  - permissões para criar e alterar tabelas, necessárias às migrações do Flyway.
+- **Acesso à internet na primeira execução**, para baixar o Maven e as dependências.
+- **IDE ou editor com suporte a Java**, de sua preferência.
 
-1. Leia o [guia de implementação da equipe](docs/GUIA_IMPLEMENTACAO.md).
-2. Confira a [rastreabilidade dos requisitos](docs/REQUISITOS.md) e o [contrato proposto da API](docs/CONTRATO_API.md).
-3. Escolha uma tarefa no [backlog com responsáveis e dependências](docs/BACKLOG.md).
-4. Siga o [fluxo de contribuição](CONTRIBUTING.md) e abra um PR pequeno por issue.
+O projeto inclui o **Maven Wrapper**, configurado para utilizar o Maven
+3.10.0. A instalação global do Maven é opcional.
 
-## Tecnologias exigidas
+Utilize `./mvnw` no Linux/macOS ou `.\mvnw.cmd` no Windows.
+As dependências declaradas no `pom.xml` são baixadas automaticamente pelo Maven.
 
-Java 21, Spring Boot, Spring Data JPA, Bean Validation, API REST e PostgreSQL. Maven com wrapper e migrações Flyway são escolhas propostas para reprodução; as versões exatas deverão ser fixadas e validadas na issue de bootstrap.
+## Variáveis de ambiente
 
-A arquitetura deve separar Entity, DTO, Repository, Service e Controller. As regras de negócio ficam nos serviços.
+Antes de executar a aplicação, crie um banco no PostgreSQL e configure as
+variáveis abaixo. O usuário precisa de permissões para criar e alterar
+tabelas, utilizadas pelas migrações do Flyway.
 
-## Repositórios
+| Variável | Descrição |
+| --- | --- |
+| `SPRING_DATASOURCE_URL` | URL de conexão JDBC com o PostgreSQL |
+| `SPRING_DATASOURCE_USERNAME` | Usuário do banco |
+| `SPRING_DATASOURCE_PASSWORD` | Senha do usuário |
 
-- Backend: <https://github.com/GenissonEmilio/coleta-seletiva-backend>
-- Frontend: <https://github.com/GenissonEmilio/coleta-seletiva-frontend>
+Exemplo no Linux/macOS:
 
-Ambos começam privados. O frontend entra na Unidade 2; seus protótipos são preparados antes da implementação da API.
+```bash
+export SPRING_DATASOURCE_URL='jdbc:postgresql://localhost:5432/coleta_seletiva'
+export SPRING_DATASOURCE_USERNAME='seu_usuario'
+export SPRING_DATASOURCE_PASSWORD='sua_senha_local'
+```
+
+No Windows, utilizando PowerShell:
+
+```powershell
+$env:SPRING_DATASOURCE_URL = 'jdbc:postgresql://localhost:5432/coleta_seletiva'
+$env:SPRING_DATASOURCE_USERNAME = 'seu_usuario'
+$env:SPRING_DATASOURCE_PASSWORD = 'sua_senha_local'
+```
+
+Substitua os valores pelos dados do seu ambiente. As variáveis também
+podem ser configuradas na IDE. Não versione credenciais reais.
 
 ## Execução e testes
 
-O bootstrap ainda será desenvolvido. Sua issue deve entregar o Maven Wrapper, configuração por variáveis de ambiente, comandos de execução e testes e configuração do PostgreSQL. Este README deve ser atualizado com os comandos realmente verificados nesse PR.
+Execute os comandos na pasta `coleta-seletiva-api`, onde está o `pom.xml`,
+usando o mesmo terminal em que configurou as variáveis.
 
-Não há configuração de banco, senha de demonstração ou credencial de produção neste commit. Não use dados pessoais reais nas demonstrações.
+### Conferir o ambiente
 
-## Referência acadêmica
+```bash
+./mvnw --version
+```
 
-Planejamento derivado de **TrabalhoWeb01.pdf**, “Sistema de Coleta Seletiva”, fornecido pela equipe em 01/11/2026. A seção 14 distingue Etapa 1 (requisitos, protótipos e modelo), Etapa 2 (banco, API e regras), Etapa 3 (interface na Unidade 2) e Etapa 4 (testes e entrega). Neste projeto, **primeira unidade** abrange o planejamento e a API completa. Datas dependem do professor.
+A saída deve indicar Java 21 e a versão do Maven utilizada pelo projeto.
+
+### Executar os testes
+
+```bash
+./mvnw test
+```
+
+O comando deve concluir com `BUILD SUCCESS`. Os testes que carregam a
+aplicação dependem do PostgreSQL disponível e das variáveis configuradas.
+
+### Iniciar a aplicação
+
+```bash
+./mvnw spring-boot:run
+```
+
+Aguarde a confirmação de inicialização no terminal. Para encerrar,
+pressione `Ctrl+C`.
+
+No Windows, substitua `./mvnw` por `.\mvnw.cmd`, mantendo os argumentos.
+
+## Verificação antes do PR
+
+- [ ] Maven Wrapper executado com Java 21.
+- [ ] Testes concluídos com sucesso.
+- [ ] Aplicação iniciada e conectada ao PostgreSQL.

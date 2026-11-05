@@ -1,0 +1,33 @@
+name: coleta-seletiva-dev
+
+services:
+  db:
+    image: postgres:17
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Defina POSTGRES_DB no .env}
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:?Defina o usuario no .env}
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?Defina a senha no .env}
+
+    ports:
+      - "127.0.0.1:5433:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres_data:
