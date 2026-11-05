@@ -9,7 +9,7 @@ tmp/
 # Configuração local e segredos
 .env
 .env.*
-!.env.example
+!coleta-seletiva-api/.env.example
 application-local.properties
 application-local.yml
 application-local.yaml
