@@ -1,28 +1,69 @@
 # Contrato proposto da API
 
-**Rascunho para revisão em PLAN-01 e API-03. Não existem endpoints implementados neste momento.** Os nomes, verbos de ações, envelope de página, parâmetros e contexto de demonstração são propostas da equipe, não imposições literais do PDF. Publicar o contrato definitivo em OpenAPI ou coleção Postman durante o desenvolvimento.
+**Convenções fechadas em API-03 (#6); endpoints ainda em desenvolvimento.** As convenções de JSON, erros e paginação abaixo valem para todos os módulos. Os nomes de endpoints e ações do mapa continuam propostas da equipe, não imposições literais do PDF. O contrato definitivo é publicado em OpenAPI (springdoc, `/v3/api-docs` e `/swagger-ui.html`), gerado a partir dos controllers; cada módulo inclui seus exemplos.*
 
 ## Convenções
 
-- Prefixo `/api/v1`; JSON UTF-8; DTOs de entrada/saída. Nunca serializar o grafo JPA diretamente.
-- IDs estáveis; protocolo único da solicitação não substitui necessariamente a chave interna.
-- `201` e `Location` na criação; `200` com representação ou `204` sem corpo para atualizações conforme contrato; `400` para entrada inválida; `404` para registro inexistente; `409` para conflito de regra, unicidade ou versão.
-- Listagens: `page` a partir de zero e `size` entre 1 e 100 (padrão proposto 20); entrada fora do intervalo retorna 400. Ordenação estável com ID como desempate.
-- Envelope de página proposto: `content`, `page`, `size`, `totalElements`, `totalPages`.
-- Eventos e agendamento usam ISO 8601 com offset; filtros por período precisam definir limites inclusivo/exclusivo e fuso em sua documentação. Proposta: início inclusivo, fim exclusivo; solicitações por criação, efetivos por conclusão.
-- Quantidades decimais exatas no backend e banco; validar quantidade integral para unidade de peça. Fechar representação JSON e precisão/escala em API-02/API-03.
+- Prefixo `/api/v1`; JSON UTF-8; DTOs de entrada/saída (`record`). Nunca serializar o grafo JPA diretamente.
+- **IDs:** número inteiro (`Long`, `bigint` no DER). O protocolo da solicitação é um texto único à parte e não substitui o ID.
+- **Datas e horas de eventos:** ISO 8601 com offset, por exemplo `"2026-11-12T14:30:00-03:00"` (`OffsetDateTime`). Datas sem hora, quando houver, usam `AAAA-MM-DD`.
+- **Quantidades:** número JSON decimal (`BigDecimal`), com no máximo 3 casas decimais e 9 dígitos inteiros (banco `numeric(12,3)`), por exemplo `2.5`. Peças só aceitam valor inteiro.
+- **Enums:** texto em maiúsculas sem acento, como `SOLICITADA`, `EM_RECOLHIMENTO` e `CONCLUIDA`. A interface exibe o texto com acento.
+- **Booleanos:** `true`/`false`. Campos nomeados em `camelCase`, sem acento.
+- **Campos opcionais ausentes:** enviados como `null` ou omitidos na entrada; na saída aparecem como `null`.
+- **Códigos HTTP:** `201` e `Location` na criação; `200` com a representação atualizada nas atualizações e ações (`204` só para `DELETE`); `400` entrada inválida; `404` registro inexistente; `409` conflito de regra, unicidade ou versão. Falha inesperada é `500` com mensagem genérica.
+- **Referência a outro registro no corpo:** se o ID informado não existe, `404`; se existe mas é incompatível com a regra (ex.: material não aceito pelo ponto), `409`. Campo malformado ou ausente é `400`.
+- **Versão:** toda mutação de solicitação recebe `versao` no corpo; versão diferente da gravada retorna `409 CONFLITO_VERSAO`. A resposta de qualquer mutação devolve a nova `versao`.
+- **Períodos:** início inclusivo e fim exclusivo, em ISO 8601 com offset. Solicitações filtram pela data de criação; quantidades efetivas pela data de conclusão.
 
-Exemplo de erro proposto:
+### Erros
+
+Todo erro tem o mesmo formato, e `errosCampos` é sempre uma lista (vazia quando o erro não é de campo):
 
 ```json
 {
   "codigo": "ENTRADA_INVALIDA",
   "mensagem": "Revise os campos informados.",
-  "errosCampos": [{"campo": "itens[0].quantidadeEstimada", "mensagem": "Deve ser positiva."}]
+  "errosCampos": [{"campo": "itens[0].quantidadeEstimada", "mensagem": "deve ser maior que zero"}]
 }
 ```
 
-Erros de regra podem ter `errosCampos: []`; nunca expor stack trace, SQL ou credenciais. Para uma referência existente e incompatível, usar 409; campos malformados são 400.
+`campo` usa o caminho do JSON (`itens[0].quantidadeEstimada`) para a interface marcar o campo certo. Nunca há stack trace, SQL, nome de tabela ou credencial na resposta; o detalhe técnico vai só para o log do servidor.
+
+| Código | HTTP | Quando |
+| --- | --- | --- |
+| `ENTRADA_INVALIDA` | 400 | Bean Validation, JSON malformado, parâmetro com tipo errado, `page` ou `size` fora do intervalo |
+| `REGISTRO_NAO_ENCONTRADO` | 404 | ID do caminho ou do corpo inexistente |
+| `ROTA_NAO_ENCONTRADA` | 404 | Caminho que não existe |
+| `METODO_NAO_PERMITIDO` | 405 | Verbo HTTP não aceito no caminho |
+| `TIPO_NAO_SUPORTADO` | 415 | Corpo que não é `application/json` |
+| `DUPLICIDADE` | 409 | E-mail, nome de material ou vínculo já existente |
+| `CONFLITO_VERSAO` | 409 | `versao` desatualizada ou escrita concorrente |
+| `TRANSICAO_INVALIDA` | 409 | Mudança de situação não permitida |
+| `MATERIAL_INCOMPATIVEL` | 409 | Material inativo ou não aceito pelo ponto, ou limite excedido |
+| `PONTO_COM_SOLICITACOES_ABERTAS` | 409 | Inativar ponto ou remover vínculo com atendimento aberto (RN05); a mensagem informa a quantidade |
+| `REGRA_NEGOCIO` | 409 | Demais regras e violações de integridade do banco |
+| `ERRO_INTERNO` | 500 | Falha inesperada |
+
+Mensagens de validação saem em português (locale `pt_BR`).
+
+### Paginação
+
+- Parâmetros `page` (a partir de 0, padrão 0) e `size` (de 1 a 100, padrão 20). Valor fora do intervalo ou não numérico retorna `400 ENTRADA_INVALIDA`, apontando o campo `page` ou `size`; a API nunca corrige o valor em silêncio.
+- A ordem de cada listagem é fixa e definida pelo módulo (por exemplo, nome crescente; solicitações da mais recente para a mais antiga), sempre com o ID como desempate. O cliente não escolhe a ordenação nesta versão.
+- Envelope de resposta, igual em todas as listagens:
+
+```json
+{
+  "content": [],
+  "page": 0,
+  "size": 20,
+  "totalElements": 45,
+  "totalPages": 3
+}
+```
+
+Página além do fim retorna `200` com `content` vazio.
 
 ## Mapa de endpoints a desenvolver
 
@@ -40,7 +81,7 @@ Erros de regra podem ter `errosCampos: []`; nunca expor stack trace, SQL ou cred
 | Execução | `POST /solicitacoes/{id}/inicio`, `/conclusao`, `/reagendamento`, `/tentativa-sem-sucesso` | API-13 |
 | Resumo | `GET /indicadores/solicitacoes?inicio=&fim=`, `GET /indicadores/recolhimentos?inicio=&fim=` | API-16 |
 
-Listagens administrativas adicionais necessárias ao uso das telas devem seguir as mesmas regras de paginação e privacidade. Os caminhos abreviados da linha de ações mantêm o prefixo `/solicitacoes/{id}`. No vínculo via PUT, devolver 201 ao criar e 200/204 ao atualizar; repetição não gera uma segunda linha. A equipe deve documentar a política de duplicidade compatível com RF05.
+Listagens administrativas adicionais necessárias ao uso das telas devem seguir as mesmas regras de paginação e privacidade. Propostas vindas da revisão das telas (PLAN-03), ainda a confirmar com a equipe: `GET /pontos` (listagem administrativa, inclui inativos), `GET /operadores`, filtro `domiciliar=true` em `GET /publico/pontos`, e um endpoint de atores de demonstração para o contexto local. Os caminhos abreviados da linha de ações mantêm o prefixo `/solicitacoes/{id}`. No vínculo via PUT, devolver 201 ao criar e 200/204 ao atualizar; repetição não gera uma segunda linha. A equipe deve documentar a política de duplicidade compatível com RF05.
 
 ## Campos e invariantes essenciais
 
