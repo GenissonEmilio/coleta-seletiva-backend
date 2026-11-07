@@ -16,7 +16,7 @@ Fonte: `TrabalhoWeb01.pdf`, fornecido pela equipe. Os identificadores RF, RN e R
 | Felipe Menezes de Jesus | [@felipmz](https://github.com/felipmz) | Modelo relacional e migrações; moradores e endereços; pontos e vínculos; execução e reagendamento; reprodução e desempenho | Cadastros de morador/endereço/ponto, vínculos e execução do operador | Revisa os PRs de Genisson |
 | Jośe Herbert Andrade silva | [@Jose-Herbert-13](https://github.com/Jose-Herbert-13) | Contrato e erros; consulta pública; operadores/contexto; criar e consultar solicitações; indicadores | Busca pública, formulário e histórico de solicitações e resumo gerencial | Revisa os PRs de Felipe |
 
-Os perfis foram encontrados nas relações de seguindo/seguidores de Genisson. Cada frente inclui **Entity, DTO, Repository, Service, Controller, testes e documentação** dos módulos correspondentes; ninguém fica restrito a uma camada. Revisão cruzada e sessões curtas de explicação ajudam os três a conhecer todo o sistema para a avaliação oral.
+Os perfis foram encontrados nas relações de seguindo/seguidores de Genisson. Cada frente inclui **Entity/Model, DTOs Request/Response, Repository, Service, Controller, testes e documentação** dos módulos correspondentes; ninguém fica restrito a uma camada. Revisão cruzada e sessões curtas de explicação ajudam os três a conhecer todo o sistema para a avaliação oral.
 
 Cada integrante tem sete tarefas principais: uma de planejamento e seis de API. Isso equilibra a quantidade inicial; complexidade deve ser revista nas reuniões. Criação de solicitação, execução e concorrência devem ter revisão conjunta.
 
@@ -68,30 +68,103 @@ Revisar transações e a mesma política de versão em todas as operações. A i
 
 ## 4. Organização do código
 
-Proposta de pacotes por funcionalidade, cada um com suas camadas:
+**Padrão adotado pela equipe:** organização por camadas, com serviços e DTOs agrupados por funcionalidade. O projeto Java fica em `coleta-seletiva-api/`, e o pacote base é `br.edu.ifs.web1.coletaseletiva`.
+
+A árvore abaixo mostra os nomes finais esperados, usando materiais como exemplo de uma funcionalidade completa. As demais funcionalidades seguem a mesma distribuição entre Controller, Service, Repository, Model e DTOs.
 
 ```text
-src/main/java/<pacote_base>/
-  shared/            erros, paginação, relógio, contexto de demonstração
-  morador/           entity, dto, repository, service, controller
-  endereco/          entity, dto, repository, service, controller
-  material/          entity, dto, repository, service, controller
-  ponto/             entity, dto, repository, service, controller
-  operador/          entity, dto, repository, service, controller
-  solicitacao/       solicitação, itens, histórico, regras e ações
-  indicador/         consultas e DTOs de resumo
-src/main/resources/db/migration/
-src/test/java/<pacote_base>/
+coleta-seletiva-api/
+  src/main/java/br/edu/ifs/web1/coletaseletiva/
+    ColetaSeletivaApiApplication.java
+    config/
+      OpenApiConfig.java
+    controller/
+      MaterialController.java
+    services/
+      morador/
+      endereco/
+      material/
+        MaterialService.java
+      ponto/
+      operador/
+      solicitacao/
+      indicador/
+    repository/
+      MaterialRepository.java
+    model/
+      MaterialModel.java
+    dto/
+      common/
+        PaginaResponse.java
+      morador/
+      endereco/
+      material/
+        MaterialRequest.java
+        MaterialResponse.java
+      ponto/
+      operador/
+      solicitacao/
+      indicador/
+    exception/
+      GlobalExceptionHandler.java
+      RegraNegocioException.java
+  src/main/resources/
+    application.properties
+    db/migration/
+  src/test/java/br/edu/ifs/web1/coletaseletiva/
 ```
 
-Esta árvore é uma proposta a criar no bootstrap, não código existente. Uma API monolítica basta; não há necessidade de microsserviços. Ponto-material e operador-ponto precisam de vínculos explícitos quando houver atributos/restrições próprios.
+### Responsabilidade de cada pacote
+
+| Pacote | Responsabilidade e convenção |
+| --- | --- |
+| `config` | Configurações da aplicação, como OpenAPI. |
+| `controller` | Endpoints REST, parâmetros HTTP, validação da entrada e encaminhamento ao Service. Nome: `<Funcionalidade>Controller`. |
+| `services/<funcionalidade>` | Regras de negócio, transações e conversão entre Request, Model e Response. Nome: `<Funcionalidade>Service`. |
+| `repository` | Acesso ao banco, consultas, filtros e paginação. Nome: `<Funcionalidade>Repository`. |
+| `model` | Entidades persistidas com JPA. Nome: `<Funcionalidade>Model`; relacionamentos e restrições seguem o DER. |
+| `dto/<funcionalidade>` | Objetos de entrada e saída daquela funcionalidade, com sufixos `Request` e `Response`. |
+| `dto/common` | DTOs reutilizados por funcionalidades diferentes, como a resposta de paginação. |
+| `exception` | Exceções da aplicação e tratamento global de erros. |
+
+Os nomes dos pacotes usam letras minúsculas e não têm acentos. Manter `services`, conforme a estrutura iniciada pela equipe. Controllers, Repositories e Models permanecem em suas camadas; o agrupamento por funcionalidade fica nos serviços e DTOs.
+
+O padrão inicial é uma **classe concreta com `@Service` por funcionalidade**. A separação entre interface e implementação pode ser introduzida se houver uma necessidade definida ou orientação do professor; não é uma exigência deste padrão inicial. A aplicação permanece uma API monolítica. Ponto-material e operador-ponto precisam de vínculos explícitos quando houver atributos/restrições próprios.
+
+### Convenção Request/Response
+
+- **`<Funcionalidade>Request`** representa dados recebidos pela API. Exemplo: `MaterialRequest`. Colocar nele as validações de entrada aplicáveis, como `@NotBlank`, `@Positive` e `@Size`.
+- **`<Funcionalidade>Response`** representa os dados devolvidos pela API. Exemplo: `MaterialResponse`, com os campos previstos no contrato e adequados ao contexto público ou restrito.
+- Quando operações tiverem campos ou regras de entrada diferentes, criar Requests específicos, como `SolicitacaoAgendamentoRequest` e `SolicitacaoConclusaoRequest`.
+- Quando telas ou contextos precisarem de representações diferentes, usar nomes que indiquem o conteúdo, como `SolicitacaoResumoResponse` e `SolicitacaoDetalheResponse`.
+- `Form` e `DTO`, usados como sufixos no exemplo do professor, correspondem respectivamente a entrada e saída. **Nesta equipe, usar `Request` e `Response` como sufixos** para manter um padrão único.
+- Controllers recebem Requests e devolvem Responses. A conversão entre DTOs e Models fica no Service; as regras de negócio também permanecem no Service. O contrato HTTP é definido pelos DTOs, sem devolver diretamente o grafo de entidades JPA.
+- DTOs não são entidades do banco e não recebem Repository próprio. Podem ser classes ou records, conforme os dados e validações necessários.
+
+### DTO comum de paginação
+
+A implementação de `PaginaResponse<T>` pertence a `dto/common` e será desenvolvida na `API-03` (#6). Ela deve conter `content`, `page`, `size`, `totalElements` e `totalPages`, conforme [CONTRATO_API.md](CONTRATO_API.md).
+
+Exemplos de uso: `PaginaResponse<MaterialResponse>`, `PaginaResponse<PontoResponse>` e `PaginaResponse<SolicitacaoResumoResponse>`. Cada módulo deve reutilizar essa estrutura, em vez de criar um envelope de paginação próprio. O Controller valida `page` e `size`; o Service monta a consulta e a resposta; o Repository aplica filtros e paginação no banco. Filtros e contexto do ator precisam participar da consulta antes da paginação.
+
+### Arquivos temporários para manter as pastas no Git
+
+O Git registra arquivos. Para disponibilizar os pacotes antes das implementações, foram criados **marcadores vazios `Teste*.java`**:
+
+- `services/<funcionalidade>/Teste<Funcionalidade>Service.java`;
+- `dto/<funcionalidade>/Teste<Funcionalidade>Request.java` e `Teste<Funcionalidade>Response.java`;
+- `dto/common/TestePaginaResponse.java`.
+
+Esses arquivos têm apenas a declaração do pacote e da classe. Não são serviços, endpoints, entidades ou testes automatizados; não possuem anotações do Spring/JPA, validações ou regras de negócio. Os marcadores existentes em `controller`, `repository` e `model` seguem a mesma finalidade. O marcador de serviço foi movido para `services/material`, seguindo o agrupamento adotado.
+
+Ao implementar uma funcionalidade, substituir ou remover os marcadores do pacote correspondente e criar as classes com os nomes finais. **Esta preparação da estrutura não conclui as issues das funcionalidades.** Os testes automatizados ficam em `src/test/java`, acompanhando os pacotes das classes testadas, com nomes como `MaterialServiceTest` e `MaterialControllerTest`. As migrações SQL em `src/main/resources/db/migration` serão criadas nas tarefas de banco correspondentes.
 
 ## 5. Decisões técnicas propostas para revisão
 
 | Assunto | Proposta | Por que importa |
 | --- | --- | --- |
 | Persistência | PostgreSQL e Flyway; JPA com esquema validado após migração | Banco reproduzível; sem depender de criação automática de tabelas |
-| Contrato | JSON; prefixo `/api/v1`; DTOs; documentação OpenAPI ou Postman | Evita divergências entre os repositórios |
+| Contrato | JSON; prefixo `/api/v1`; DTOs Request/Response; documentação OpenAPI ou Postman | Evita divergências entre os repositórios |
 | Quantidades | `BigDecimal`; unidade no material e cópia no item; valor integral para peças | Não misturar kg/litro/peça nem perder precisão |
 | Histórico | Registro relacionado à solicitação; incluir criação e cada mudança/tentativa | Rastreabilidade e demonstração dos cenários |
 | Concorrência | Versão otimista na solicitação; versão esperada em todas as mutações; conflito 409 | Evita sobrescrever atendimento com dados antigos |
