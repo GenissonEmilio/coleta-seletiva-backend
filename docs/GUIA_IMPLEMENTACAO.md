@@ -89,6 +89,8 @@ coleta-seletiva-api/
       operador/
       solicitacao/
       indicador/
+      paginacao/
+        PaginacaoService.java
     repository/
       MaterialRepository.java
     model/
@@ -96,6 +98,9 @@ coleta-seletiva-api/
     dto/
       common/
         PaginaResponse.java
+        PaginacaoRequest.java
+        ErroResponse.java
+        ErroCampoResponse.java
       morador/
       endereco/
       material/
@@ -143,21 +148,30 @@ O padrão inicial é uma **classe concreta com `@Service` por funcionalidade**. 
 
 ### DTO comum de paginação
 
-A implementação de `PaginaResponse<T>` pertence a `dto/common` e será desenvolvida na `API-03` (#6). Ela deve conter `content`, `page`, `size`, `totalElements` e `totalPages`, conforme [CONTRATO_API.md](CONTRATO_API.md).
+A implementação de `PaginaResponse<T>` pertence a `dto/common` e contém `content`, `page`, `size`, `totalElements` e `totalPages`, conforme [CONTRATO_API.md](CONTRATO_API.md). `PaginacaoRequest`, no mesmo pacote, representa os parâmetros de entrada e suas restrições.
 
 Exemplos de uso: `PaginaResponse<MaterialResponse>`, `PaginaResponse<PontoResponse>` e `PaginaResponse<SolicitacaoResumoResponse>`. Cada módulo deve reutilizar essa estrutura, em vez de criar um envelope de paginação próprio. O Controller valida `page` e `size`; o Service monta a consulta e a resposta; o Repository aplica filtros e paginação no banco. Filtros e contexto do ator precisam participar da consulta antes da paginação.
 
+`PaginacaoService`, em `services/paginacao`, transforma o Request em `Pageable`, rejeita valores inválidos e acrescenta o ID como desempate da ordenação. Os serviços dos módulos podem recebê-lo por construtor e chamar `criarPageable(entrada, ordem)` antes de consultar o Repository. O método `PaginaResponse.de(pagina, conversor)` permite converter Models para Responses preservando os metadados da página.
+
+As respostas de erro também ficam em `dto/common`: `ErroResponse` contém `codigo`, `mensagem` e `errosCampos`, com cada campo representado por `ErroCampoResponse`. As exceções, seus códigos e o `GlobalExceptionHandler` ficam em `exception`. A configuração OpenAPI fica em `config/OpenApiConfig.java`.
+
 ### Arquivos temporários para manter as pastas no Git
 
-O Git registra arquivos. Para disponibilizar os pacotes antes das implementações, foram criados **marcadores vazios `Teste*.java`**:
+O Git registra arquivos. Os pacotes ainda sem implementação usam **marcadores vazios `Teste*.java`**:
 
 - `services/<funcionalidade>/Teste<Funcionalidade>Service.java`;
 - `dto/<funcionalidade>/Teste<Funcionalidade>Request.java` e `Teste<Funcionalidade>Response.java`;
-- `dto/common/TestePaginaResponse.java`.
+
+O antigo `dto/common/TestePaginaResponse.java` e o marcador `exception/TesteException.java` foram substituídos pelas implementações reais de paginação e erros da API-03.
 
 Esses arquivos têm apenas a declaração do pacote e da classe. Não são serviços, endpoints, entidades ou testes automatizados; não possuem anotações do Spring/JPA, validações ou regras de negócio. Os marcadores existentes em `controller`, `repository` e `model` seguem a mesma finalidade. O marcador de serviço foi movido para `services/material`, seguindo o agrupamento adotado.
 
 Ao implementar uma funcionalidade, substituir ou remover os marcadores do pacote correspondente e criar as classes com os nomes finais. **Esta preparação da estrutura não conclui as issues das funcionalidades.** Os testes automatizados ficam em `src/test/java`, acompanhando os pacotes das classes testadas, com nomes como `MaterialServiceTest` e `MaterialControllerTest`. As migrações SQL em `src/main/resources/db/migration` serão criadas nas tarefas de banco correspondentes.
+
+### Validação automática da API
+
+O workflow `.github/workflows/api-tests.yml` executa os testes das PRs que alteram a API, com Java 21 e PostgreSQL 17 em ambiente descartável. O processo de build fica em um container limitado a 2 GiB de RAM e duas CPUs; o banco tem limite próprio de 512 MiB e uma CPU. As credenciais são exclusivas da execução de teste, sem utilizar o `.env` dos integrantes. Os relatórios ficam nos artefatos da execução por sete dias.
 
 ## 5. Decisões técnicas propostas para revisão
 

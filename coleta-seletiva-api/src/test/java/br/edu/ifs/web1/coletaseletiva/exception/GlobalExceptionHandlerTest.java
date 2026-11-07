@@ -1,4 +1,4 @@
-package br.edu.ifs.web1.coletaseletiva.shared.erro;
+package br.edu.ifs.web1.coletaseletiva.exception;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
@@ -11,6 +11,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.math.BigDecimal;
 import java.util.List;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,15 +32,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
+import br.edu.ifs.web1.coletaseletiva.dto.common.PaginaResponse;
+import br.edu.ifs.web1.coletaseletiva.dto.common.PaginacaoRequest;
+import br.edu.ifs.web1.coletaseletiva.services.paginacao.PaginacaoService;
 
 /** Testa o formato de erro sem banco de dados, com um controller que existe só nos testes. */
 @WebMvcTest(controllers = GlobalExceptionHandlerTest.TesteController.class)
-@Import({ GlobalExceptionHandler.class, GlobalExceptionHandlerTest.TesteController.class })
+@Import({ GlobalExceptionHandler.class, GlobalExceptionHandlerTest.TesteController.class, PaginacaoService.class })
 class GlobalExceptionHandlerTest {
 
     @Autowired
@@ -129,7 +133,8 @@ class GlobalExceptionHandlerTest {
     void parametroComTipoInvalidoRetorna400() throws Exception {
         mvc.perform(get("/teste/pagina").param("page", "abc"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.codigo").value("ENTRADA_INVALIDA"));
+                .andExpect(jsonPath("$.codigo").value("ENTRADA_INVALIDA"))
+                .andExpect(jsonPath("$.errosCampos[0].campo").value("page"));
     }
 
     @Test
@@ -148,6 +153,16 @@ class GlobalExceptionHandlerTest {
         mvc.perform(get("/teste/pagina").param("page", "2").param("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(5)));
+    }
+
+    @Test
+    void paginaAlemDoFimMantemTotaisComConteudoVazio() throws Exception {
+        mvc.perform(get("/teste/pagina").param("page", "3").param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(0)))
+                .andExpect(jsonPath("$.page").value(3))
+                .andExpect(jsonPath("$.totalElements").value(45))
+                .andExpect(jsonPath("$.totalPages").value(3));
     }
 
     @Test
@@ -186,14 +201,20 @@ class GlobalExceptionHandlerTest {
     @RequestMapping("/teste")
     static class TesteController {
 
-        record ItemTeste(@NotNull @Positive BigDecimal quantidadeEstimada) {
+        private final PaginacaoService paginacaoService;
+
+        TesteController(PaginacaoService paginacaoService) {
+            this.paginacaoService = paginacaoService;
         }
 
-        record EntradaTeste(@NotBlank String nome, @NotEmpty List<@Valid ItemTeste> itens) {
+        record ItemTesteRequest(@NotNull @Positive BigDecimal quantidadeEstimada) {
+        }
+
+        record EntradaTesteRequest(@NotBlank String nome, @NotEmpty List<@Valid ItemTesteRequest> itens) {
         }
 
         @PostMapping("/entrada")
-        public String entrada(@Valid @RequestBody EntradaTeste entrada) {
+        public String entrada(@Valid @RequestBody EntradaTesteRequest entrada) {
             return "ok";
         }
 
@@ -204,7 +225,7 @@ class GlobalExceptionHandlerTest {
 
         @GetMapping("/duplicidade")
         public String duplicidade() {
-            throw new ErroNegocioException(CodigoErro.DUPLICIDADE, "E-mail já cadastrado.");
+            throw new RegraNegocioException(CodigoErro.DUPLICIDADE, "E-mail já cadastrado.");
         }
 
         @GetMapping("/versao")
@@ -224,17 +245,17 @@ class GlobalExceptionHandlerTest {
         }
 
         @GetMapping("/pagina")
-        public br.edu.ifs.web1.coletaseletiva.shared.paginacao.PaginaResposta<Integer> pagina(
+        public PaginaResponse<Integer> pagina(
                 @org.springframework.web.bind.annotation.RequestParam(
-                        defaultValue = br.edu.ifs.web1.coletaseletiva.shared.paginacao.Paginacao.PAGE_PADRAO) int page,
+                        defaultValue = PaginacaoRequest.PAGE_PADRAO) int page,
                 @org.springframework.web.bind.annotation.RequestParam(
-                        defaultValue = br.edu.ifs.web1.coletaseletiva.shared.paginacao.Paginacao.SIZE_PADRAO) int size) {
-            var pageable = br.edu.ifs.web1.coletaseletiva.shared.paginacao.Paginacao.pageable(page, size,
+                        defaultValue = PaginacaoRequest.SIZE_PADRAO) int size) {
+            var pageable = paginacaoService.criarPageable(new PaginacaoRequest(page, size),
                     org.springframework.data.domain.Sort.by("id"));
             List<Integer> todos = java.util.stream.IntStream.range(0, 45).boxed().toList();
             int de = (int) Math.min(pageable.getOffset(), todos.size());
             int ate = Math.min(de + pageable.getPageSize(), todos.size());
-            return br.edu.ifs.web1.coletaseletiva.shared.paginacao.PaginaResposta
+            return PaginaResponse
                     .de(new org.springframework.data.domain.PageImpl<>(todos.subList(de, ate), pageable, todos.size()));
         }
     }

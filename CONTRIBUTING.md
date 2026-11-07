@@ -19,7 +19,7 @@
 ## Acordos técnicos
 
 - Seguir a [organização por camadas e as convenções da equipe](docs/GUIA_IMPLEMENTACAO.md#4-organização-do-código): serviços em `services/<funcionalidade>`, DTOs em `dto/<funcionalidade>` e DTOs compartilhados em `dto/common`.
-- Nomear entradas com o sufixo `Request` e saídas com `Response`. Usar `PaginaResponse<T>` como envelope comum de paginação quando implementado na API-03. Ao implementar o módulo, substituir ou remover os marcadores vazios `Teste*.java` correspondentes.
+- Nomear entradas com o sufixo `Request` e saídas com `Response`. Usar `PaginaResponse<T>` como envelope comum de paginação e `PaginacaoRequest` para os parâmetros, com apoio de `PaginacaoService` na criação do `Pageable`. Ao implementar o módulo, substituir ou remover os marcadores vazios `Teste*.java` correspondentes.
 - JSON e caminhos de API em português, sem acentos; proposta inicial em [CONTRATO_API.md](docs/CONTRATO_API.md).
 - Use `BigDecimal` para quantidades; não use `double` para peso/volume. Unidade de peça exige valor integral.
 - Use datas de eventos com offset, relógio injetável nos testes e comparação por instante.

@@ -1,14 +1,14 @@
-package br.edu.ifs.web1.coletaseletiva.shared.erro;
+package br.edu.ifs.web1.coletaseletiva.exception;
 
 /**
  * Violação de regra de negócio, duplicidade, versão ou transição inválida.
  * O Service lança esta exceção com o código adequado; o status HTTP vem do código.
  */
-public class ErroNegocioException extends RuntimeException {
+public class RegraNegocioException extends RuntimeException {
 
     private final CodigoErro codigo;
 
-    public ErroNegocioException(CodigoErro codigo, String mensagem) {
+    public RegraNegocioException(CodigoErro codigo, String mensagem) {
         super(mensagem);
         this.codigo = codigo;
     }

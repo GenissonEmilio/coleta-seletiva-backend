@@ -1,10 +1,13 @@
-package br.edu.ifs.web1.coletaseletiva.shared.erro;
+package br.edu.ifs.web1.coletaseletiva.exception;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import jakarta.validation.ConstraintViolationException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -18,14 +21,14 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-import org.springframework.beans.TypeMismatchException;
-
-import jakarta.validation.ConstraintViolationException;
+import br.edu.ifs.web1.coletaseletiva.dto.common.ErroCampoResponse;
+import br.edu.ifs.web1.coletaseletiva.dto.common.ErroResponse;
 
 /**
- * Tratamento global de erros. Converte qualquer falha no formato {@link ErroResposta}.
+ * Tratamento global de erros. Converte qualquer falha no formato {@link ErroResponse}.
  * Estende ResponseEntityExceptionHandler para também padronizar os erros do próprio
  * Spring MVC (rota inexistente, método não permitido, JSON malformado etc.).
  */
@@ -41,8 +44,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return resposta(CodigoErro.ENTRADA_INVALIDA, ex.getMessage(), ex.getErros());
     }
 
-    @ExceptionHandler(ErroNegocioException.class)
-    public ResponseEntity<Object> erroNegocio(ErroNegocioException ex) {
+    @ExceptionHandler(RegraNegocioException.class)
+    public ResponseEntity<Object> erroNegocio(RegraNegocioException ex) {
         return resposta(ex.getCodigo(), ex.getMessage(), List.of());
     }
 
@@ -66,8 +69,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<Object> violacoes(ConstraintViolationException ex) {
-        List<ErroCampo> erros = ex.getConstraintViolations().stream()
-                .map(v -> new ErroCampo(ultimoNo(v.getPropertyPath().toString()), v.getMessage()))
+        List<ErroCampoResponse> erros = ex.getConstraintViolations().stream()
+                .map(v -> new ErroCampoResponse(ultimoNo(v.getPropertyPath().toString()), v.getMessage()))
                 .toList();
         return resposta(CodigoErro.ENTRADA_INVALIDA, "Revise os campos informados.", erros);
     }
@@ -85,20 +88,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
                                                                   HttpHeaders headers, HttpStatusCode status, WebRequest request) {
-        List<ErroCampo> erros = new ArrayList<>();
+        List<ErroCampoResponse> erros = new ArrayList<>();
         ex.getBindingResult().getFieldErrors()
-                .forEach(e -> erros.add(new ErroCampo(e.getField(), e.getDefaultMessage())));
+                .forEach(e -> erros.add(new ErroCampoResponse(e.getField(), e.getDefaultMessage())));
         ex.getBindingResult().getGlobalErrors()
-                .forEach(e -> erros.add(new ErroCampo(e.getObjectName(), e.getDefaultMessage())));
+                .forEach(e -> erros.add(new ErroCampoResponse(e.getObjectName(), e.getDefaultMessage())));
         return resposta(CodigoErro.ENTRADA_INVALIDA, "Revise os campos informados.", erros);
     }
 
     @Override
     protected ResponseEntity<Object> handleHandlerMethodValidationException(HandlerMethodValidationException ex,
                                                                             HttpHeaders headers, HttpStatusCode status, WebRequest request) {
-        List<ErroCampo> erros = new ArrayList<>();
+        List<ErroCampoResponse> erros = new ArrayList<>();
         ex.getParameterValidationResults().forEach(r -> r.getResolvableErrors()
-                .forEach(e -> erros.add(new ErroCampo(r.getMethodParameter().getParameterName(),
+                .forEach(e -> erros.add(new ErroCampoResponse(r.getMethodParameter().getParameterName(),
                         e.getDefaultMessage()))));
         return resposta(CodigoErro.ENTRADA_INVALIDA, "Revise os campos informados.", erros);
     }
@@ -115,15 +118,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     protected ResponseEntity<Object> handleMissingServletRequestParameter(MissingServletRequestParameterException ex,
                                                                           HttpHeaders headers, HttpStatusCode status, WebRequest request) {
         return resposta(CodigoErro.ENTRADA_INVALIDA, "Revise os parâmetros informados.",
-                List.of(new ErroCampo(ex.getParameterName(), "é obrigatório")));
+                List.of(new ErroCampoResponse(ex.getParameterName(), "é obrigatório")));
     }
 
     @Override
     protected ResponseEntity<Object> handleTypeMismatch(TypeMismatchException ex, HttpHeaders headers,
                                                         HttpStatusCode status, WebRequest request) {
-        String campo = ex.getPropertyName() != null ? ex.getPropertyName() : "parametro";
+        String nome = ex instanceof MethodArgumentTypeMismatchException parametro
+                ? parametro.getName() : ex.getPropertyName();
+        String campo = nome != null ? nome : "parametro";
         return resposta(CodigoErro.ENTRADA_INVALIDA, "Revise os parâmetros informados.",
-                List.of(new ErroCampo(campo, "valor em formato inválido")));
+                List.of(new ErroCampoResponse(campo, "valor em formato inválido")));
     }
 
     /** Demais erros do Spring MVC (404 de rota, 405, 415...), no mesmo formato. */
@@ -151,13 +156,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             mensagem = "Erro interno. Tente novamente mais tarde.";
         }
         return ResponseEntity.status(statusCode).headers(headers)
-                .body(ErroResposta.de(codigo, mensagem));
+                .body(ErroResponse.de(codigo, mensagem));
     }
 
     // ---------- Apoio ----------
 
-    private static ResponseEntity<Object> resposta(CodigoErro codigo, String mensagem, List<ErroCampo> erros) {
-        return ResponseEntity.status(codigo.getStatus()).body(ErroResposta.de(codigo, mensagem, erros));
+    private static ResponseEntity<Object> resposta(CodigoErro codigo, String mensagem, List<ErroCampoResponse> erros) {
+        return ResponseEntity.status(codigo.getStatus()).body(ErroResponse.de(codigo, mensagem, erros));
     }
 
     private static String ultimoNo(String caminho) {

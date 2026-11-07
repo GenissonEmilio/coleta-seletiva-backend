@@ -1,4 +1,4 @@
-package br.edu.ifs.web1.coletaseletiva.shared.erro;
+package br.edu.ifs.web1.coletaseletiva.exception;
 
 import org.springframework.http.HttpStatus;
 
