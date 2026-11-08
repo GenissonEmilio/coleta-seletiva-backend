@@ -108,9 +108,59 @@ Legenda:
 
 ---
 
-## 2. Pendentes
+## 2. Validação
 
-- Teste de integração com o banco real (`@SpringBootTest`), cobrindo o `UNIQUE` do e-mail e o acesso cruzado a endereço.
-- Validação ponta a ponta com a API rodando e `curl`, com comandos e resultados reais.
-- Exemplos de chamada e erro no `CONTRATO_API.md`.
+**Ambiente:** PostgreSQL 17 descartável (container `postgres:17`, sem volume, porta 5435, 512 MB, senha gerada na hora e descartada), Spring Boot 4.1.2. O JDK usado na execução foi o 25.0.1, e o projeto compila para o Java 21. Nenhum volume nem dado do usuário foi tocado, e o container foi parado ao fim.
+
+**Comandos:**
+1. Banco: `docker run --rm -d --name coleta-teste-pg -p 127.0.0.1:5435:5432 --memory 512m --tmpfs /var/lib/postgresql/data -e POSTGRES_DB=coleta_teste -e POSTGRES_USER=coleta_teste -e POSTGRES_PASSWORD=<senha descartável> postgres:17`.
+2. Testes: `./mvnw test`, com `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` e `SPRING_DATASOURCE_PASSWORD` apontando para o banco.
+3. API: `./mvnw spring-boot:run` com as mesmas variáveis, e chamadas com `curl` em `http://localhost:8080`. O Flyway aplicou `V1` a `V6` do zero (`Successfully applied 6 migrations`).
+
+**Testes automatizados:** `./mvnw test` terminou com 51 testes, 0 falhas e `BUILD SUCCESS`. Desses, 21 são desta issue, enxutos de propósito (um teste por regra, sem repetir a mesma regra em várias camadas):
+- `MoradorServiceTest` (4): cadastro válido, e-mail repetido com caixa e espaços, atualizar sem trocar o e-mail, atualizar com o e-mail de outro morador.
+- `EnderecoServiceTest` (4): UF em maiúsculas, regra do número, listagem em página, endereço de outro morador.
+- `MoradorRequestTest` (3): cadastro válido, nome em branco e e-mail inválido, normalização do e-mail.
+- `MoradorControllerTest` (3) e `EnderecoControllerTest` (3): `201` com `Location`, `400` por campo, `409` e a listagem paginada.
+- `MoradorEnderecoIntegracaoTest` (4, contra o banco real): cadastro persiste e é consultado, e-mail repetido com caixa e espaços conflita, o banco rejeita e-mail repetido sem passar pelo Service, endereço de outro morador não pode ser atualizado.
+
+Os demais casos (404, paginação fora do intervalo, regra do número, endereço incompleto e outros) ficam provados pelas 24 chamadas reais abaixo.
+
+**Chamadas reais com `curl` (API rodando):**
+
+| # | Chamada | Esperado | Obtido |
+| --- | --- | --- | --- |
+| 01 | `POST /moradores` válido | `201` com `Location` | `201`, `Location: .../moradores/1` |
+| 02 | `POST /moradores` com `"  MARIA@Exemplo.com "` | `409` | `409 DUPLICIDADE` |
+| 03 | `POST /moradores` sem nome | `400` no campo `nome` | `400`, campo `nome` |
+| 04 | `POST /moradores` com e-mail inválido | `400` no campo `email` | `400`, campo `email` |
+| 05 | `GET /moradores/1` | `200` | `200` |
+| 06 | `GET /moradores/999` | `404` | `404 REGISTRO_NAO_ENCONTRADO` |
+| 07 | `GET /moradores/abc` | `400` | `400`, campo `id` |
+| 08 | `PUT /moradores/1` (telefone novo) | `200` | `200` |
+| 09 | `POST /moradores` (segundo morador) | `201` | `201`, id 2 |
+| 10 | `PUT /moradores/2` com o e-mail do morador 1 | `409` | `409 DUPLICIDADE` |
+| 11 | `POST /moradores/1/enderecos` válido | `201` com `Location` | `201`, `Location: .../enderecos/1` |
+| 12 | endereço sem número e `semNumero` falso | `400` no campo `numero` | `400`, campo `numero` |
+| 13 | endereço com número e `semNumero` verdadeiro | `400` no campo `numero` | `400`, campo `numero` |
+| 14 | endereço incompleto (sem logradouro e município, UF e CEP inválidos) | `400` com os 4 campos | `400`, campos `uf`, `cep`, `municipio` e `logradouro` |
+| 15 | endereço sem número, `semNumero` verdadeiro, UF `se` | `201`, `numero` nulo, UF `SE` | `201`, `numero: null`, `uf: "SE"` |
+| 16 | endereço para morador 999 | `404` | `404` |
+| 17 | `PUT /moradores/2/enderecos/1` (endereço do morador 1) | `404` | `404 REGISTRO_NAO_ENCONTRADO` |
+| 18 | `PUT /moradores/1/enderecos/1` (próprio endereço) | `200` | `200`, número e complemento atualizados |
+| 19 | `GET /moradores/1/enderecos?page=0&size=1` | página com 1 de 2 | `totalElements: 2`, `totalPages: 2` |
+| 20 | `GET ...?page=5&size=1` | `200` com `content` vazio | `200`, `content: []` |
+| 21 | `GET ...?page=abc` | `400` no campo `page` | `400`, campo `page` |
+| 22 | `GET ...?size=0` | `400` no campo `size` | `400`, campo `size` |
+| 23 | `GET /moradores/2/enderecos` | lista vazia | `200`, `totalElements: 0` |
+| 24 | `GET /moradores/999/enderecos` | `404` | `404` |
+
+O OpenAPI (`/v3/api-docs`) lista os quatro caminhos: `/api/v1/moradores`, `/api/v1/moradores/{id}`, `/api/v1/moradores/{moradorId}/enderecos` e `/api/v1/moradores/{moradorId}/enderecos/{enderecoId}`.
+
+---
+
+## 3. Pendentes
+
+- Decidir com a equipe se existe `GET /moradores/{id}/enderecos/{enderecoId}` (hoje o `Location` do `POST` aponta para um caminho que só aceita `PUT`).
 - Coordenar com a API-14 (inativação preservando referências) e com o Genisson.
+- Revisão do Herbert sobre as decisões 1.7 (normalização do e-mail no DTO) e 1.9 (endereço de outro morador responde `404`).

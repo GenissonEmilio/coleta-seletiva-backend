@@ -106,6 +106,109 @@ Listagens administrativas adicionais necessárias ao uso das telas devem seguir 
 | Item | material, cópia da unidade, estimada positiva, efetiva não negativa quando informada; único por material na solicitação |
 | Histórico | situação anterior/nova, evento, instante, responsável, motivo e dados da tentativa; valores opcionais apenas quando o evento não os exigir |
 
+## Moradores e endereços (API-04)
+
+Todos os caminhos usam o prefixo `/api/v1`. Dados dos exemplos são fictícios. Decisões completas em [docs/documentos-issues/issue-api-04](documentos-issues/issue-api-04/Registro_de_decisoes.md).
+
+| Operação | Sucesso | Erros possíveis |
+| --- | --- | --- |
+| `POST /moradores` | `201` com `Location` | `400`, `409 DUPLICIDADE` |
+| `GET /moradores/{id}` | `200` | `404` |
+| `PUT /moradores/{id}` | `200` | `400`, `404`, `409 DUPLICIDADE` |
+| `POST /moradores/{moradorId}/enderecos` | `201` com `Location` | `400`, `404` |
+| `GET /moradores/{moradorId}/enderecos?page=&size=` | `200` (`PaginaResponse`) | `400`, `404` |
+| `PUT /moradores/{moradorId}/enderecos/{enderecoId}` | `200` | `400`, `404` |
+
+**Regras do morador**
+- `nome` e `email` são obrigatórios. `telefone` é opcional (até 20 caracteres).
+- O e-mail é normalizado (minúsculo, sem espaços nas pontas) **antes** da validação e da checagem de unicidade. `"  MARIA@Exemplo.com "` e `maria@exemplo.com` são o mesmo e-mail e geram `409 DUPLICIDADE`. A unicidade também existe no banco.
+- Moradores não são excluídos. A inativação é da API-14.
+
+**Regras do endereço**
+- Obrigatórios: `logradouro`, `bairro`, `municipio`, `uf` (2 letras, gravada em maiúsculas) e `cep` (8 dígitos, sem traço). Opcional: `complemento`.
+- **Número ou sem número, regra inequívoca:** `semNumero = true` exige `numero` vazio, e `semNumero = false` exige `numero` preenchido. Violações geram `400` apontando o campo `numero`. `semNumero` ausente vale `false`.
+- Um endereço pertence a um único morador. Acessar ou atualizar um endereço por um morador que não é o dono responde `404`, como se ele não existisse. O mesmo vale para o uso do endereço numa solicitação.
+- A listagem é paginada e ordenada pelo `id` (ordem de cadastro).
+
+**Exemplo: cadastrar morador**
+
+```http
+POST /api/v1/moradores
+Content-Type: application/json
+
+{"nome": "Maria Souza", "email": "maria@exemplo.com", "telefone": "79999990000"}
+```
+
+```http
+201 Created
+Location: http://localhost:8080/api/v1/moradores/1
+
+{"id": 1, "nome": "Maria Souza", "email": "maria@exemplo.com", "telefone": "79999990000", "ativo": true}
+```
+
+**Exemplo: e-mail repetido** (mesmo e-mail com outra caixa e espaços)
+
+```http
+409 Conflict
+
+{"codigo": "DUPLICIDADE", "mensagem": "Já existe um morador com este e-mail.", "errosCampos": []}
+```
+
+**Exemplo: nome ausente**
+
+```http
+400 Bad Request
+
+{"codigo": "ENTRADA_INVALIDA", "mensagem": "Revise os campos informados.",
+ "errosCampos": [{"campo": "nome", "mensagem": "não deve estar em branco"}]}
+```
+
+**Exemplo: cadastrar endereço**
+
+```http
+POST /api/v1/moradores/1/enderecos
+Content-Type: application/json
+
+{"logradouro": "Rua das Flores", "numero": "120", "semNumero": false, "bairro": "Centro",
+ "municipio": "Cidade Teste", "uf": "SE", "cep": "49000000"}
+```
+
+```http
+201 Created
+Location: http://localhost:8080/api/v1/moradores/1/enderecos/1
+
+{"id": 1, "moradorId": 1, "logradouro": "Rua das Flores", "numero": "120", "semNumero": false,
+ "bairro": "Centro", "municipio": "Cidade Teste", "uf": "SE", "cep": "49000000", "complemento": null, "ativo": true}
+```
+
+**Exemplo: regra do número violada** (`semNumero` falso e `numero` ausente)
+
+```http
+400 Bad Request
+
+{"codigo": "ENTRADA_INVALIDA", "mensagem": "Revise os campos informados.",
+ "errosCampos": [{"campo": "numero", "mensagem": "é obrigatório quando semNumero é falso"}]}
+```
+
+**Exemplo: endereço de outro morador** (`PUT /moradores/2/enderecos/1`, sendo o endereço 1 do morador 1)
+
+```http
+404 Not Found
+
+{"codigo": "REGISTRO_NAO_ENCONTRADO", "mensagem": "Endereço não encontrado(a): 1", "errosCampos": []}
+```
+
+**Exemplo: listar endereços** (`GET /moradores/1/enderecos?page=0&size=1`)
+
+```http
+200 OK
+
+{"content": [{"id": 1, "moradorId": 1, "logradouro": "Rua das Flores", "numero": "200", "semNumero": false,
+              "bairro": "Centro", "municipio": "Cidade Teste", "uf": "SE", "cep": "49000000",
+              "complemento": "Apto 2", "ativo": true}],
+ "page": 0, "size": 1, "totalElements": 2, "totalPages": 2}
+```
+
 ## Criação e correção de solicitação
 
 Entrada: endereço do morador, ponto escolhido, observações e lista não vazia de `{materialId, quantidadeEstimada}`. O contexto de demonstração resolve o morador e a política definitiva sobre `moradorId`; não confiar em um ID enviado pelo navegador como prova de identidade.

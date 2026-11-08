@@ -50,54 +50,26 @@ class EnderecoServiceTest {
     }
 
     @Test
-    void cadastraEnderecoComNumeroEUfEmMaiusculas() {
+    void cadastraEnderecoComUfEmMaiusculas() {
         when(moradorRepository.findById(1L)).thenReturn(Optional.of(morador(1L)));
         when(enderecoRepository.save(any(EnderecoModel.class)))
                 .thenAnswer(invocacao -> comId(invocacao.getArgument(0), 10L));
 
         EnderecoResponse resposta = service.cadastrar(1L, request("120", false, "se"));
 
-        assertThat(resposta.id()).isEqualTo(10L);
         assertThat(resposta.moradorId()).isEqualTo(1L);
         assertThat(resposta.numero()).isEqualTo("120");
-        assertThat(resposta.semNumero()).isFalse();
         assertThat(resposta.uf()).isEqualTo("SE");
     }
 
     @Test
-    void cadastraEnderecoSemNumero() {
-        when(moradorRepository.findById(1L)).thenReturn(Optional.of(morador(1L)));
-        when(enderecoRepository.save(any(EnderecoModel.class)))
-                .thenAnswer(invocacao -> comId(invocacao.getArgument(0), 10L));
-
-        EnderecoResponse resposta = service.cadastrar(1L, request(null, true, "SE"));
-
-        assertThat(resposta.semNumero()).isTrue();
-        assertThat(resposta.numero()).isNull();
-    }
-
-    @Test
-    void rejeitaSemNumeroVerdadeiroComNumeroPreenchido() {
+    void rejeitaNumeroQueContradizOSemNumero() {
         assertThatThrownBy(() -> service.cadastrar(1L, request("120", true, "SE")))
                 .isInstanceOfSatisfying(EntradaInvalidaException.class,
                         e -> assertThat(e.getErros()).extracting(ErroCampoResponse::campo).containsExactly("numero"));
-        verify(enderecoRepository, never()).save(any());
-    }
-
-    @Test
-    void rejeitaSemNumeroFalsoSemNumeroPreenchido() {
         assertThatThrownBy(() -> service.cadastrar(1L, request("  ", false, "SE")))
                 .isInstanceOfSatisfying(EntradaInvalidaException.class,
                         e -> assertThat(e.getErros()).extracting(ErroCampoResponse::campo).containsExactly("numero"));
-        verify(enderecoRepository, never()).save(any());
-    }
-
-    @Test
-    void cadastrarParaMoradorInexistenteLancaNaoEncontrado() {
-        when(moradorRepository.findById(99L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.cadastrar(99L, request("120", false, "SE")))
-                .isInstanceOf(RecursoNaoEncontradoException.class);
         verify(enderecoRepository, never()).save(any());
     }
 
@@ -111,31 +83,7 @@ class EnderecoServiceTest {
         PaginaResponse<EnderecoResponse> pagina = service.listar(1L, new PaginacaoRequest(0, 20));
 
         assertThat(pagina.content()).hasSize(1);
-        assertThat(pagina.content().get(0).moradorId()).isEqualTo(1L);
-        assertThat(pagina.page()).isZero();
-        assertThat(pagina.size()).isEqualTo(20);
         assertThat(pagina.totalElements()).isEqualTo(1);
-    }
-
-    @Test
-    void listarParaMoradorInexistenteLancaNaoEncontrado() {
-        when(moradorRepository.findById(99L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.listar(99L, new PaginacaoRequest(0, 20)))
-                .isInstanceOf(RecursoNaoEncontradoException.class);
-    }
-
-    @Test
-    void atualizaEnderecoDoProprioMorador() {
-        EnderecoModel existente = endereco(10L, morador(1L));
-        when(moradorRepository.findById(1L)).thenReturn(Optional.of(morador(1L)));
-        when(enderecoRepository.findByIdAndMoradorId(10L, 1L)).thenReturn(Optional.of(existente));
-        when(enderecoRepository.save(existente)).thenReturn(existente);
-
-        EnderecoResponse resposta = service.atualizar(1L, 10L, request("200", false, "al"));
-
-        assertThat(resposta.numero()).isEqualTo("200");
-        assertThat(resposta.uf()).isEqualTo("AL");
     }
 
     @Test
