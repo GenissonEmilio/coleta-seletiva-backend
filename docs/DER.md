@@ -2,7 +2,7 @@
 
 Modelo relacional da primeira unidade (issue #2, PLAN-02). Requisitos cobertos: seção 10 do PDF, RN01-RN06 e RNF05.
 
-**Situação:** proposta para revisão dos três integrantes. As migrações definitivas só começam após aprovação.
+**Situação:** implementado nas migrações `V1` a `V6` (issue #5, API-02). Os acréscimos feitos na implementação estão marcados como **decisão** e justificados no [Registro de decisões da API-02](documentos-issues/issue-api-02/Registro_de_decisoes.md).
 
 **Critério usado:** entra o que o PDF pede. Itens que o PDF não cita, mas que são necessários, estão marcados como **decisão** no dicionário de dados, com o motivo. Justificativas e consequências completas: [Registro de decisões](documentos-issues/issue-02/Registro_de_decisoes.md).
 
@@ -186,6 +186,8 @@ Restrição: `CHECK (sem_numero OR numero IS NOT NULL)` (RF02: endereço incompl
 | ativo | boolean | NOT NULL, default true | RF04 ("situação"); RN03 |
 | recolhimento_domiciliar | boolean | NOT NULL | RF04; RN01 |
 
+Restrição: `CHECK (sem_numero OR numero IS NOT NULL)`. **Decisão:** mesma regra do endereço, para o campo `sem_numero` ter efeito (decisão 1.5 do [Registro da API-02](documentos-issues/issue-api-02/Registro_de_decisoes.md)).
+
 ### PONTO_MATERIAL
 | Campo | Tipo | Restrição | Origem |
 | --- | --- | --- | --- |
@@ -225,6 +227,8 @@ A PK composta `(ponto_id, material_id)` impede repetir o vínculo (RF05).
 | agendada_para | timestamptz | | RF10 ("data e hora futuras") |
 | concluida_em | timestamptz | | RF13 ("registrar data") |
 | versao | bigint | NOT NULL, default 0 | Seção 10; RN06 (conflito de versão) |
+
+Restrição: `CHECK (end_sem_numero OR end_numero IS NOT NULL)`. **Decisão:** a cópia repete a regra do endereço (decisão 1.5 do [Registro da API-02](documentos-issues/issue-api-02/Registro_de_decisoes.md)).
 
 Valores de `situacao`: SOLICITADA, AGENDADA, RECUSADA, CANCELADA, EM_RECOLHIMENTO, CONCLUIDA (sem acento no banco).
 
