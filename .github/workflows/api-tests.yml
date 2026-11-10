@@ -1,0 +1,58 @@
+name: Testes da API
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "coleta-seletiva-api/**"
+      - ".github/workflows/api-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    name: Java 21 e PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: eclipse-temurin:21-jdk
+      options: --memory=2g --memory-swap=2560m --cpus=2
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: coleta_seletiva_test
+          POSTGRES_USER: coleta_test
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+        options: >-
+          --memory=512m --memory-swap=512m --cpus=1
+          --health-cmd "pg_isready -U coleta_test -d coleta_seletiva_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/coleta_seletiva_test
+      SPRING_DATASOURCE_USERNAME: coleta_test
+      SPRING_DATASOURCE_PASSWORD: ${{ github.run_id }}
+      MAVEN_OPTS: -Xmx640m -XX:ActiveProcessorCount=2
+    defaults:
+      run:
+        working-directory: coleta-seletiva-api
+    steps:
+      - name: Obter código
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Executar testes
+        run: >-
+          sh ./mvnw -B -ntp -T 1 test
+          -DargLine="-Xmx512m -XX:ActiveProcessorCount=2"
+          -DforkCount=1 -DreuseForks=true
+      - name: Preservar relatórios dos testes
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: relatorios-testes-api
+          path: coleta-seletiva-api/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7

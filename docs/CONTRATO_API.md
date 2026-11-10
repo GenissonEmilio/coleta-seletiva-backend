@@ -1,10 +1,10 @@
 # Contrato proposto da API
 
-**Convenções fechadas em API-03 (#6); endpoints ainda em desenvolvimento.** As convenções de JSON, erros e paginação abaixo valem para todos os módulos. Os nomes de endpoints e ações do mapa continuam propostas da equipe, não imposições literais do PDF. O contrato definitivo é publicado em OpenAPI (springdoc, `/v3/api-docs` e `/swagger-ui.html`), gerado a partir dos controllers; cada módulo inclui seus exemplos.*
+**Convenções da API-03 (#6), sujeitas à revisão da equipe na PR; endpoints ainda em desenvolvimento.** As convenções de JSON, erros e paginação abaixo valem para todos os módulos. Os nomes de endpoints e ações do mapa continuam propostas da equipe, não imposições literais do PDF. O contrato é publicado em OpenAPI (springdoc, `/v3/api-docs` e `/swagger-ui.html`), gerado a partir dos controllers; cada módulo inclui seus exemplos.
 
 ## Convenções
 
-- Prefixo `/api/v1`; JSON UTF-8; DTOs de entrada/saída (`record`). Nunca serializar o grafo JPA diretamente.
+- Prefixo `/api/v1`; JSON UTF-8; DTOs de entrada com sufixo `Request` e de saída com sufixo `Response`, implementados como classes ou records. Nunca serializar o grafo JPA diretamente.
 - **IDs:** número inteiro (`Long`, `bigint` no DER). O protocolo da solicitação é um texto único à parte e não substitui o ID.
 - **Datas e horas de eventos:** ISO 8601 com offset, por exemplo `"2026-11-12T14:30:00-03:00"` (`OffsetDateTime`). Datas sem hora, quando houver, usam `AAAA-MM-DD`.
 - **Quantidades:** número JSON decimal (`BigDecimal`), com no máximo 3 casas decimais e 9 dígitos inteiros (banco `numeric(12,3)`), por exemplo `2.5`. Peças só aceitam valor inteiro.
@@ -51,12 +51,12 @@ Mensagens de validação saem em português (locale `pt_BR`).
 
 - Parâmetros `page` (a partir de 0, padrão 0) e `size` (de 1 a 100, padrão 20). Valor fora do intervalo ou não numérico retorna `400 ENTRADA_INVALIDA`, apontando o campo `page` ou `size`; a API nunca corrige o valor em silêncio.
 - A ordem de cada listagem é fixa e definida pelo módulo (por exemplo, nome crescente; solicitações da mais recente para a mais antiga), sempre com o ID como desempate. O cliente não escolhe a ordenação nesta versão.
-- Envelope de resposta, igual em todas as listagens:
+- Envelope de resposta `PaginaResponse<T>`, igual em todas as listagens. Exemplo de página além do fim, com 45 registros e tamanho 20:
 
 ```json
 {
   "content": [],
-  "page": 0,
+  "page": 3,
   "size": 20,
   "totalElements": 45,
   "totalPages": 3
@@ -64,6 +64,15 @@ Mensagens de validação saem em português (locale `pt_BR`).
 ```
 
 Página além do fim retorna `200` com `content` vazio.
+
+### Organização das implementações comuns
+
+- `dto/common`: `PaginacaoRequest`, `PaginaResponse`, `ErroResponse` e `ErroCampoResponse`.
+- `services/paginacao`: `PaginacaoService`, usado pelos serviços dos módulos para criar o `Pageable` com ordenação estável.
+- `exception`: `CodigoErro`, `EntradaInvalidaException`, `RegraNegocioException`, `RecursoNaoEncontradoException` e `GlobalExceptionHandler`.
+- `config`: `OpenApiConfig`.
+
+Essa organização segue o [guia da equipe](GUIA_IMPLEMENTACAO.md#4-organização-do-código). Os nomes Java foram padronizados; os campos JSON de erros e paginação continuam os mesmos.
 
 ## Mapa de endpoints a desenvolver
 
@@ -96,6 +105,109 @@ Listagens administrativas adicionais necessárias ao uso das telas devem seguir 
 | Solicitação | protocolo, morador, ponto, cópia do endereço, situação, datas com offset, observações, versão |
 | Item | material, cópia da unidade, estimada positiva, efetiva não negativa quando informada; único por material na solicitação |
 | Histórico | situação anterior/nova, evento, instante, responsável, motivo e dados da tentativa; valores opcionais apenas quando o evento não os exigir |
+
+## Moradores e endereços (API-04)
+
+Todos os caminhos usam o prefixo `/api/v1`. Dados dos exemplos são fictícios. Decisões completas em [docs/documentos-issues/issue-api-04](documentos-issues/issue-api-04/Registro_de_decisoes.md).
+
+| Operação | Sucesso | Erros possíveis |
+| --- | --- | --- |
+| `POST /moradores` | `201` com `Location` | `400`, `409 DUPLICIDADE` |
+| `GET /moradores/{id}` | `200` | `404` |
+| `PUT /moradores/{id}` | `200` | `400`, `404`, `409 DUPLICIDADE` |
+| `POST /moradores/{moradorId}/enderecos` | `201` com `Location` | `400`, `404` |
+| `GET /moradores/{moradorId}/enderecos?page=&size=` | `200` (`PaginaResponse`) | `400`, `404` |
+| `PUT /moradores/{moradorId}/enderecos/{enderecoId}` | `200` | `400`, `404` |
+
+**Regras do morador**
+- `nome` e `email` são obrigatórios. `telefone` é opcional (até 20 caracteres).
+- O e-mail é normalizado (minúsculo, sem espaços nas pontas) **antes** da validação e da checagem de unicidade. `"  MARIA@Exemplo.com "` e `maria@exemplo.com` são o mesmo e-mail e geram `409 DUPLICIDADE`. A unicidade também existe no banco.
+- Moradores não são excluídos. A inativação é da API-14.
+
+**Regras do endereço**
+- Obrigatórios: `logradouro`, `bairro`, `municipio`, `uf` (2 letras, gravada em maiúsculas) e `cep` (8 dígitos, sem traço). Opcional: `complemento`.
+- **Número ou sem número, regra inequívoca:** `semNumero = true` exige `numero` vazio, e `semNumero = false` exige `numero` preenchido. Violações geram `400` apontando o campo `numero`. `semNumero` ausente vale `false`.
+- Um endereço pertence a um único morador. Acessar ou atualizar um endereço por um morador que não é o dono responde `404`, como se ele não existisse. O mesmo vale para o uso do endereço numa solicitação.
+- A listagem é paginada e ordenada pelo `id` (ordem de cadastro).
+
+**Exemplo: cadastrar morador**
+
+```http
+POST /api/v1/moradores
+Content-Type: application/json
+
+{"nome": "Maria Souza", "email": "maria@exemplo.com", "telefone": "79999990000"}
+```
+
+```http
+201 Created
+Location: http://localhost:8080/api/v1/moradores/1
+
+{"id": 1, "nome": "Maria Souza", "email": "maria@exemplo.com", "telefone": "79999990000", "ativo": true}
+```
+
+**Exemplo: e-mail repetido** (mesmo e-mail com outra caixa e espaços)
+
+```http
+409 Conflict
+
+{"codigo": "DUPLICIDADE", "mensagem": "Já existe um morador com este e-mail.", "errosCampos": []}
+```
+
+**Exemplo: nome ausente**
+
+```http
+400 Bad Request
+
+{"codigo": "ENTRADA_INVALIDA", "mensagem": "Revise os campos informados.",
+ "errosCampos": [{"campo": "nome", "mensagem": "não deve estar em branco"}]}
+```
+
+**Exemplo: cadastrar endereço**
+
+```http
+POST /api/v1/moradores/1/enderecos
+Content-Type: application/json
+
+{"logradouro": "Rua das Flores", "numero": "120", "semNumero": false, "bairro": "Centro",
+ "municipio": "Cidade Teste", "uf": "SE", "cep": "49000000"}
+```
+
+```http
+201 Created
+Location: http://localhost:8080/api/v1/moradores/1/enderecos/1
+
+{"id": 1, "moradorId": 1, "logradouro": "Rua das Flores", "numero": "120", "semNumero": false,
+ "bairro": "Centro", "municipio": "Cidade Teste", "uf": "SE", "cep": "49000000", "complemento": null, "ativo": true}
+```
+
+**Exemplo: regra do número violada** (`semNumero` falso e `numero` ausente)
+
+```http
+400 Bad Request
+
+{"codigo": "ENTRADA_INVALIDA", "mensagem": "Revise os campos informados.",
+ "errosCampos": [{"campo": "numero", "mensagem": "é obrigatório quando semNumero é falso"}]}
+```
+
+**Exemplo: endereço de outro morador** (`PUT /moradores/2/enderecos/1`, sendo o endereço 1 do morador 1)
+
+```http
+404 Not Found
+
+{"codigo": "REGISTRO_NAO_ENCONTRADO", "mensagem": "Endereço não encontrado(a): 1", "errosCampos": []}
+```
+
+**Exemplo: listar endereços** (`GET /moradores/1/enderecos?page=0&size=1`)
+
+```http
+200 OK
+
+{"content": [{"id": 1, "moradorId": 1, "logradouro": "Rua das Flores", "numero": "200", "semNumero": false,
+              "bairro": "Centro", "municipio": "Cidade Teste", "uf": "SE", "cep": "49000000",
+              "complemento": "Apto 2", "ativo": true}],
+ "page": 0, "size": 1, "totalElements": 2, "totalPages": 2}
+```
 
 ## Criação e correção de solicitação
 
