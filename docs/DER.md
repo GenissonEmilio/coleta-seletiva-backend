@@ -175,6 +175,8 @@ Restrição: `CHECK (sem_numero OR numero IS NOT NULL)` (RF02: endereço incompl
 | orientacao_preparo | text | | RF03 |
 | ativo | boolean | NOT NULL, default true | RF03 ("inativar"); seção 10 ("situação") |
 
+Na API-05, a migração V7 acrescenta `idx_material_nome_normalizado`, índice único sobre `LOWER(BTRIM(nome))`. O nome mantém a apresentação, mas variações de caixa e espaços nas pontas não criam outro material, inclusive após inativação. As migrações V1 a V6 e os dados existentes são preservados. Se já houver duplicatas por essa nova comparação, elas precisam ser revisadas antes da migração; ela não apaga nem escolhe um cadastro automaticamente.
+
 ### PONTO_COLETA
 | Campo | Tipo | Restrição | Origem |
 | --- | --- | --- | --- |

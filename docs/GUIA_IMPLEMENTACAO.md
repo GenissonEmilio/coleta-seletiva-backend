@@ -85,6 +85,7 @@ coleta-seletiva-api/
       endereco/
       material/
         MaterialService.java
+        QuantidadeMaterialService.java
       ponto/
       operador/
       solicitacao/
@@ -95,6 +96,7 @@ coleta-seletiva-api/
       MaterialRepository.java
     model/
       MaterialModel.java
+      UnidadeMaterial.java
     dto/
       common/
         PaginaResponse.java
@@ -106,6 +108,7 @@ coleta-seletiva-api/
       material/
         MaterialRequest.java
         MaterialResponse.java
+        MaterialSituacaoRequest.java
       ponto/
       operador/
       solicitacao/
@@ -135,6 +138,8 @@ coleta-seletiva-api/
 Os nomes dos pacotes usam letras minúsculas e não têm acentos. Manter `services`, conforme a estrutura iniciada pela equipe. Controllers, Repositories e Models permanecem em suas camadas; o agrupamento por funcionalidade fica nos serviços e DTOs.
 
 O padrão inicial é uma **classe concreta com `@Service` por funcionalidade**. A separação entre interface e implementação pode ser introduzida se houver uma necessidade definida ou orientação do professor; não é uma exigência deste padrão inicial. A aplicação permanece uma API monolítica. Ponto-material e operador-ponto precisam de vínculos explícitos quando houver atributos/restrições próprios.
+
+O módulo de materiais (API-05) substitui seus marcadores pelas classes acima. `UnidadeMaterial` é o catálogo compartilhado de `KG`, `LITRO` e `UNIDADE`; as regras de quantidades ficam em `QuantidadeMaterialService`. Os próximos módulos devem reutilizar esse catálogo, a validação de material ativo e as regras de quantidade descritas no [contrato](CONTRATO_API.md#integração-com-as-próximas-funcionalidades).
 
 ### Convenção Request/Response
 
