@@ -13,6 +13,7 @@ public enum CodigoErro {
     ROTA_NAO_ENCONTRADA(HttpStatus.NOT_FOUND),
     METODO_NAO_PERMITIDO(HttpStatus.METHOD_NOT_ALLOWED),
     TIPO_NAO_SUPORTADO(HttpStatus.UNSUPPORTED_MEDIA_TYPE),
+    ACESSO_NEGADO(HttpStatus.FORBIDDEN),
 
     // Conflitos (409)
     DUPLICIDADE(HttpStatus.CONFLICT),
