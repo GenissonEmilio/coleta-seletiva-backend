@@ -8,6 +8,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -16,13 +17,18 @@ import java.util.stream.Collectors;
 
 import jakarta.persistence.EntityManager;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import br.edu.ifs.web1.coletaseletiva.dto.common.PaginaResponse;
+import br.edu.ifs.web1.coletaseletiva.dto.common.PaginacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.ItemSolicitacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoCorrecaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResponse;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResumoResponse;
 import br.edu.ifs.web1.coletaseletiva.exception.CodigoErro;
 import br.edu.ifs.web1.coletaseletiva.exception.EntradaInvalidaException;
 import br.edu.ifs.web1.coletaseletiva.exception.RecursoNaoEncontradoException;
@@ -44,13 +50,16 @@ import br.edu.ifs.web1.coletaseletiva.repository.PontoMaterialRepository;
 import br.edu.ifs.web1.coletaseletiva.repository.PontoRepository;
 import br.edu.ifs.web1.coletaseletiva.repository.SolicitacaoRepository;
 import br.edu.ifs.web1.coletaseletiva.services.contexto.ContextoAtor;
+import br.edu.ifs.web1.coletaseletiva.services.contexto.TipoAtor;
 import br.edu.ifs.web1.coletaseletiva.services.material.MaterialService;
 import br.edu.ifs.web1.coletaseletiva.services.material.QuantidadeMaterialService;
+import br.edu.ifs.web1.coletaseletiva.services.paginacao.PaginacaoService;
 import br.edu.ifs.web1.coletaseletiva.services.ponto.PontoService;
 
 /**
- * Criação e correção de solicitação (RF08). Cada método público é uma única transação (RN06):
+ * Criação e correção (RF08) e consultas (RF09) de solicitação. Cada alteração é uma única transação (RN06):
  * solicitação, itens e histórico são gravados juntos ou nada é gravado.
+ * As consultas só devolvem o que pertence ao contexto do ator.
  */
 @Service
 public class SolicitacaoService {
@@ -58,6 +67,11 @@ public class SolicitacaoService {
     private static final String LETRAS_PROTOCOLO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     private static final int TAMANHO_CODIGO = 6;
     private static final DateTimeFormatter DATA_PROTOCOLO = DateTimeFormatter.ofPattern("yyyyMMdd");
+    /** Limites usados quando o cliente não informa o período: não restringem nada. */
+    private static final OffsetDateTime SEM_INICIO = OffsetDateTime.of(1970, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+    private static final OffsetDateTime SEM_FIM = OffsetDateTime.of(3000, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+    /** A consulta exige uma lista não vazia; este id não existe e é ignorado quando não há restrição. */
+    private static final List<Long> NENHUM_PONTO = List.of(-1L);
 
     private final SolicitacaoRepository solicitacaoRepository;
     private final HistoricoSolicitacaoRepository historicoRepository;
@@ -68,6 +82,7 @@ public class SolicitacaoService {
     private final PontoService pontoService;
     private final MaterialService materialService;
     private final QuantidadeMaterialService quantidadeMaterialService;
+    private final PaginacaoService paginacaoService;
     private final EntityManager entityManager;
     private final SecureRandom sorteio = new SecureRandom();
 
@@ -76,7 +91,7 @@ public class SolicitacaoService {
             EnderecoRepository enderecoRepository, PontoRepository pontoRepository,
             PontoMaterialRepository pontoMaterialRepository, PontoService pontoService,
             MaterialService materialService, QuantidadeMaterialService quantidadeMaterialService,
-            EntityManager entityManager) {
+            PaginacaoService paginacaoService, EntityManager entityManager) {
         this.solicitacaoRepository = solicitacaoRepository;
         this.historicoRepository = historicoRepository;
         this.moradorRepository = moradorRepository;
@@ -86,6 +101,7 @@ public class SolicitacaoService {
         this.pontoService = pontoService;
         this.materialService = materialService;
         this.quantidadeMaterialService = quantidadeMaterialService;
+        this.paginacaoService = paginacaoService;
         this.entityManager = entityManager;
     }
 
@@ -144,6 +160,54 @@ public class SolicitacaoService {
         solicitacaoRepository.flush();
         garantirNovaVersao(solicitacao, versaoLida);
         return converter(solicitacao);
+    }
+
+    /**
+     * Lista da mais recente para a mais antiga, só com o que o ator pode ver:
+     * morador, as próprias; operador, as dos pontos dele; administrador, todas.
+     * Período: início inclusivo e fim exclusivo, pela data de criação.
+     */
+    @Transactional(readOnly = true)
+    public PaginaResponse<SolicitacaoResumoResponse> listar(ContextoAtor ator, OffsetDateTime inicio,
+            OffsetDateTime fim, SituacaoSolicitacao situacao, Long pontoId, PaginacaoRequest entrada) {
+        if (inicio != null && fim != null && !inicio.isBefore(fim)) {
+            throw new EntradaInvalidaException("fim", "deve ser posterior ao início");
+        }
+        Pageable pagina = paginacaoService.criarPageable(entrada, Sort.by(Sort.Order.desc("criadaEm")));
+        boolean operador = ator.is(TipoAtor.OPERADOR);
+        List<Long> pontosDoOperador = operador && !ator.pontoIds().isEmpty()
+                ? List.copyOf(ator.pontoIds()) : NENHUM_PONTO;
+        return PaginaResponse.de(solicitacaoRepository.consultar(
+                ator.is(TipoAtor.MORADOR) ? ator.id() : null,
+                !operador, pontosDoOperador, pontoId,
+                situacao == null ? Arrays.asList(SituacaoSolicitacao.values()) : List.of(situacao),
+                inicio == null ? SEM_INICIO : inicio, fim == null ? SEM_FIM : fim, pagina),
+                this::converterResumo);
+    }
+
+    @Transactional(readOnly = true)
+    public SolicitacaoResponse buscar(ContextoAtor ator, Long id) {
+        return converter(buscarNoContexto(ator, id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<SolicitacaoResponse.Historico> listarHistorico(ContextoAtor ator, Long id) {
+        return converterHistorico(buscarNoContexto(ator, id).getId());
+    }
+
+    /** Fora do contexto do ator responde 404, como se a solicitação não existisse: nada é revelado. */
+    private SolicitacaoModel buscarNoContexto(ContextoAtor ator, Long id) {
+        return solicitacaoRepository.findById(id)
+                .filter(solicitacao -> pertenceAoContexto(ator, solicitacao))
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Solicitação", id));
+    }
+
+    private static boolean pertenceAoContexto(ContextoAtor ator, SolicitacaoModel solicitacao) {
+        return switch (ator.tipo()) {
+            case ADMINISTRADOR -> true;
+            case MORADOR -> solicitacao.getMorador().getId().equals(ator.id());
+            case OPERADOR -> ator.pontoIds().contains(solicitacao.getPonto().getId());
+        };
     }
 
     private EnderecoModel buscarEnderecoDoMorador(Long enderecoId, Long moradorId) {
@@ -249,15 +313,26 @@ public class SolicitacaoService {
                         item.getUnidade(), semZerosFinais(item.getQuantidadeEstimada()),
                         semZerosFinais(item.getQuantidadeEfetiva())))
                 .toList();
-        List<SolicitacaoResponse.Historico> historico = historicoRepository
-                .findBySolicitacaoIdOrderByOcorridoEmAscIdAsc(solicitacao.getId()).stream()
+        return new SolicitacaoResponse(solicitacao.getId(), solicitacao.getProtocolo(), solicitacao.getSituacao(),
+                solicitacao.getVersao(), solicitacao.getCriadaEm(), solicitacao.getAgendadaPara(),
+                solicitacao.getConcluidaEm(), solicitacao.getMorador().getId(), solicitacao.getPonto().getId(),
+                endereco, solicitacao.getObservacoes(), itens, converterHistorico(solicitacao.getId()));
+    }
+
+    /** Ordem cronológica, com o id como desempate. */
+    private List<SolicitacaoResponse.Historico> converterHistorico(Long solicitacaoId) {
+        return historicoRepository.findBySolicitacaoIdOrderByOcorridoEmAscIdAsc(solicitacaoId).stream()
                 .map(linha -> new SolicitacaoResponse.Historico(linha.getSituacaoAnterior(), linha.getSituacaoNova(),
                         linha.getOcorridoEm(), linha.getResponsavelTipo(), linha.getResponsavelId(),
-                        linha.getMotivo()))
+                        linha.getMotivo(), linha.getAgendamentoNovo()))
                 .toList();
-        return new SolicitacaoResponse(solicitacao.getId(), solicitacao.getProtocolo(), solicitacao.getSituacao(),
-                solicitacao.getVersao(), solicitacao.getCriadaEm(), solicitacao.getMorador().getId(),
-                solicitacao.getPonto().getId(), endereco, solicitacao.getObservacoes(), itens, historico);
+    }
+
+    private SolicitacaoResumoResponse converterResumo(SolicitacaoModel solicitacao) {
+        return new SolicitacaoResumoResponse(solicitacao.getId(), solicitacao.getProtocolo(),
+                solicitacao.getSituacao(), solicitacao.getCriadaEm(), solicitacao.getAgendadaPara(),
+                solicitacao.getConcluidaEm(), solicitacao.getMorador().getId(), solicitacao.getPonto().getId(),
+                solicitacao.getPonto().getNome());
     }
 
     /** Sempre em UTC: é assim que o banco devolve o timestamptz, então a resposta fica uniforme. */
