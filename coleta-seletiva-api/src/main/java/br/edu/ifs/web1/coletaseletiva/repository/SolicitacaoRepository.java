@@ -54,4 +54,13 @@ public interface SolicitacaoRepository extends JpaRepository<SolicitacaoModel, L
             @Param("todosOsPontos") boolean todosOsPontos, @Param("pontoIds") Collection<Long> pontoIds,
             @Param("pontoId") Long pontoId, @Param("situacoes") Collection<SituacaoSolicitacao> situacoes,
             @Param("inicio") OffsetDateTime inicio, @Param("fim") OffsetDateTime fim, Pageable pageable);
+
+    @Query("""
+            select count(s) from SolicitacaoModel s
+            where s.ponto.id = :pontoId and s.situacao in :situacoes
+            and (:materialId is null or exists (
+                select 1 from ItemSolicitacaoModel i where i.solicitacao = s and i.material.id = :materialId))
+            """)
+    long contarAbertasAfetadas(@Param("pontoId") Long pontoId, @Param("materialId") Long materialId,
+            @Param("situacoes") Collection<SituacaoSolicitacao> situacoes);
 }

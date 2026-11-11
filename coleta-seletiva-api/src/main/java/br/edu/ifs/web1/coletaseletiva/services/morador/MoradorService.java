@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import br.edu.ifs.web1.coletaseletiva.dto.morador.MoradorRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.morador.MoradorResponse;
+import br.edu.ifs.web1.coletaseletiva.dto.morador.MoradorSituacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.exception.CodigoErro;
 import br.edu.ifs.web1.coletaseletiva.exception.RecursoNaoEncontradoException;
 import br.edu.ifs.web1.coletaseletiva.exception.RegraNegocioException;
@@ -46,6 +47,13 @@ public class MoradorService {
             throw emailDuplicado();
         }
         preencher(morador, request);
+        return converter(salvar(morador));
+    }
+
+    @Transactional
+    public MoradorResponse alterarSituacao(Long id, MoradorSituacaoRequest request) {
+        MoradorModel morador = buscarModel(id);
+        morador.setAtivo(request.ativo());
         return converter(salvar(morador));
     }
 

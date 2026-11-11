@@ -24,21 +24,24 @@ import br.edu.ifs.web1.coletaseletiva.repository.PontoMaterialRepository;
 import br.edu.ifs.web1.coletaseletiva.repository.PontoRepository;
 import br.edu.ifs.web1.coletaseletiva.services.material.QuantidadeMaterialService;
 import br.edu.ifs.web1.coletaseletiva.services.paginacao.PaginacaoService;
+import br.edu.ifs.web1.coletaseletiva.services.ponto.PontoService;
 
 @Service
 public class PontoMaterialService {
 
     private final PontoMaterialRepository pontoMaterialRepository;
     private final PontoRepository pontoRepository;
+    private final PontoService pontoService;
     private final MaterialRepository materialRepository;
     private final QuantidadeMaterialService quantidadeMaterialService;
     private final PaginacaoService paginacaoService;
 
     public PontoMaterialService(PontoMaterialRepository pontoMaterialRepository, PontoRepository pontoRepository,
-            MaterialRepository materialRepository, QuantidadeMaterialService quantidadeMaterialService,
-            PaginacaoService paginacaoService) {
+            PontoService pontoService, MaterialRepository materialRepository,
+            QuantidadeMaterialService quantidadeMaterialService, PaginacaoService paginacaoService) {
         this.pontoMaterialRepository = pontoMaterialRepository;
         this.pontoRepository = pontoRepository;
+        this.pontoService = pontoService;
         this.materialRepository = materialRepository;
         this.quantidadeMaterialService = quantidadeMaterialService;
         this.paginacaoService = paginacaoService;
@@ -50,7 +53,7 @@ public class PontoMaterialService {
 
     @Transactional
     public VinculoGravado vincular(Long pontoId, Long materialId, PontoMaterialRequest request) {
-        PontoModel ponto = buscarPonto(pontoId);
+        PontoModel ponto = pontoService.travarParaAlteracao(pontoId);
         MaterialModel material = buscarMaterial(materialId);
         validarLimite(request, material);
         Optional<PontoMaterialModel> atual =
@@ -74,11 +77,12 @@ public class PontoMaterialService {
         return PaginaResponse.de(pontoMaterialRepository.findByPontoId(pontoId, pagina), this::converter);
     }
 
-    /** A proteção da RN05 (solicitações abertas afetadas) é integrada pela API-14. */
     @Transactional
     public void remover(Long pontoId, Long materialId) {
+        pontoService.travarParaAlteracao(pontoId);
         PontoMaterialModel vinculo = pontoMaterialRepository.findById(new PontoMaterialId(pontoId, materialId))
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Material aceito", materialId));
+        pontoService.exigirSemSolicitacoesAbertas(pontoId, materialId);
         pontoMaterialRepository.delete(vinculo);
     }
 

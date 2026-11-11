@@ -67,7 +67,8 @@ public class PontoController {
     }
 
     @PatchMapping("/{id}/situacao")
-    @Operation(summary = "Inativa ou reativa um ponto de coleta, preservando seu cadastro")
+    @Operation(summary = "Inativa ou reativa um ponto de coleta, preservando seu cadastro",
+            description = "A inativação retorna 409 quando houver solicitações abertas no ponto")
     public PontoResponse alterarSituacao(@PathVariable Long id, @Valid @RequestBody PontoSituacaoRequest request) {
         return pontoService.alterarSituacao(id, request);
     }

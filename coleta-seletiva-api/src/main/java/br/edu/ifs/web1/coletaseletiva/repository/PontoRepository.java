@@ -44,4 +44,8 @@ public interface PontoRepository extends JpaRepository<PontoModel, Long> {
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("select p from PontoModel p where p.id = :id")
     Optional<PontoModel> travarParaSolicitacao(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from PontoModel p where p.id = :id")
+    Optional<PontoModel> travarParaAlteracao(@Param("id") Long id);
 }
