@@ -57,6 +57,13 @@ public class ContextoService {
         }
     }
 
+    /** Criar e corrigir solicitação é ação do morador (seção 3 do PDF). */
+    public void exigirMorador(ContextoAtor ator) {
+        if (!ator.is(TipoAtor.MORADOR)) {
+            throw new AcessoNegadoException("Operação permitida apenas ao morador.");
+        }
+    }
+
     /** O administrador vê qualquer operador; o operador só vê a si mesmo. */
     public void exigirAdministradorOuProprioOperador(ContextoAtor ator, Long operadorId) {
         boolean proprio = ator.is(TipoAtor.OPERADOR) && ator.id().equals(operadorId);
