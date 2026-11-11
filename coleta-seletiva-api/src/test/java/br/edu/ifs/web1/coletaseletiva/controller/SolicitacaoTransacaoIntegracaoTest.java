@@ -12,11 +12,11 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
 
@@ -25,11 +25,14 @@ import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -39,6 +42,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import br.edu.ifs.web1.coletaseletiva.model.HistoricoSolicitacaoModel;
 import br.edu.ifs.web1.coletaseletiva.repository.HistoricoSolicitacaoRepository;
 import br.edu.ifs.web1.coletaseletiva.repository.PontoRepository;
+import br.edu.ifs.web1.coletaseletiva.repository.SolicitacaoRepository;
 
 /**
  * Atomicidade (RN06) e trava do ponto com transações reais: este teste NÃO é @Transactional,
@@ -66,6 +70,9 @@ class SolicitacaoTransacaoIntegracaoTest {
 
     @Autowired
     PontoRepository pontoRepository;
+
+    @Autowired
+    SolicitacaoRepository solicitacaoRepository;
 
     @MockitoSpyBean
     HistoricoSolicitacaoRepository historicoRepository;
@@ -136,25 +143,30 @@ class SolicitacaoTransacaoIntegracaoTest {
         assertThat(linhasDoMorador()).containsExactly(0L, 0L, 0L);
     }
 
-    @Test
-    void duasCorrecoesSimultaneasComAMesmaVersaoUmaConfirmaEAOutraRecebe409() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void duasCorrecoesQueLeramAMesmaVersaoTemUmaVencedora(boolean trocarEndereco) throws Exception {
         long id = idDe(criar(item(vidro, "2")).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString());
-        String correcao = "{\"versao\":0,\"enderecoId\":" + endereco + ",\"itens\":[" + item(vidro, "3") + "]}";
-        CountDownLatch largada = new CountDownLatch(1);
-        Callable<Integer> corrigir = () -> {
-            largada.await();
-            return mvc.perform(put("/api/v1/solicitacoes/" + id + "/dados").header("X-Ator-Tipo", "MORADOR")
-                            .header("X-Ator-Id", morador).contentType(MediaType.APPLICATION_JSON).content(correcao))
-                    .andReturn().getResponse().getStatus();
-        };
+        long destino = trocarEndereco ? idDe(enviar(post("/api/v1/moradores/" + morador + "/enderecos"),
+                "{\"logradouro\":\"Outra rua\",\"numero\":\"201\",\"bairro\":\"Centro\","
+                        + "\"municipio\":\"Cidade Teste\",\"uf\":\"SE\",\"cep\":\"49000000\"}")) : endereco;
+        CyclicBarrier leituras = new CyclicBarrier(2);
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<Integer> primeira = executor.submit(corrigir);
-            Future<Integer> segunda = executor.submit(corrigir);
-            largada.countDown();
-            assertThat(List.of(primeira.get(), segunda.get())).containsExactlyInAnyOrder(200, 409);
+            Future<MockHttpServletResponse> primeira = executor.submit(() -> corrigirNaTransacao(id, destino, "3", leituras));
+            Future<MockHttpServletResponse> segunda = executor.submit(() -> corrigirNaTransacao(id, destino, "4", leituras));
+            MockHttpServletResponse a = primeira.get(15, TimeUnit.SECONDS);
+            MockHttpServletResponse b = segunda.get(15, TimeUnit.SECONDS);
+            assertThat(List.of(a.getStatus(), b.getStatus())).containsExactlyInAnyOrder(200, 409);
+            MockHttpServletResponse vencedora = a.getStatus() == 200 ? a : b;
+            MockHttpServletResponse perdedora = a.getStatus() == 409 ? a : b;
+            assertThat((String) JsonPath.read(perdedora.getContentAsString(), "$.codigo")).isEqualTo("CONFLITO_VERSAO");
+            assertThat((Integer) JsonPath.read(vencedora.getContentAsString(), "$.versao")).isEqualTo(1);
+            Number quantidade = JsonPath.read(vencedora.getContentAsString(), "$.itens[0].quantidadeEstimada");
+            assertThat(jdbc.queryForList("SELECT quantidade_estimada FROM item_solicitacao WHERE solicitacao_id = ?",
+                    Integer.class, id)).containsExactly(quantidade.intValue());
         } finally {
             executor.shutdownNow();
         }
@@ -162,6 +174,45 @@ class SolicitacaoTransacaoIntegracaoTest {
         assertThat(jdbc.queryForObject("SELECT versao FROM solicitacao WHERE id = ?", Long.class, id)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM historico_solicitacao WHERE solicitacao_id = ?",
                 Long.class, id)).isEqualTo(2);
+    }
+
+    private MockHttpServletResponse corrigirNaTransacao(long id, long destino, String quantidade,
+            CyclicBarrier leituras) {
+        return transacao.execute(statusTransacao -> {
+            assertThat(solicitacaoRepository.findById(id).orElseThrow().getVersao()).isZero();
+            try {
+                leituras.await(8, TimeUnit.SECONDS);
+                MockHttpServletResponse resposta = mvc.perform(put("/api/v1/solicitacoes/" + id + "/dados")
+                        .header("X-Ator-Tipo", "MORADOR").header("X-Ator-Id", morador)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(correcao(destino, quantidade, "0"))).andReturn().getResponse();
+                if (resposta.getStatus() >= 400) {
+                    statusTransacao.setRollbackOnly();
+                }
+                return resposta;
+            } catch (Exception e) {
+                throw new IllegalStateException("Falha ao coordenar as duas correções", e);
+            }
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-1", "0.5", "\"0\"", "9223372036854775808"})
+    void correcaoComVersaoInvalidaRetorna400SemGravar(String versao) throws Exception {
+        long id = idDe(criar(item(vidro, "2")).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString());
+        mvc.perform(put("/api/v1/solicitacoes/" + id + "/dados").header("X-Ator-Tipo", "MORADOR")
+                .header("X-Ator-Id", morador).contentType(MediaType.APPLICATION_JSON)
+                .content(correcao(endereco, "3", versao)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("ENTRADA_INVALIDA"));
+        assertThat(jdbc.queryForObject("SELECT versao FROM solicitacao WHERE id = ?", Long.class, id)).isZero();
+        assertThat(linhasDoMorador()).containsExactly(1L, 1L, 1L);
+    }
+
+    private String correcao(long destino, String quantidade, String versao) {
+        return "{\"versao\":" + versao + ",\"enderecoId\":" + destino + ",\"itens\":["
+                + item(vidro, quantidade) + "]}";
     }
 
     /** Política combinada com a API-14: criar solicitação usa FOR SHARE; inativar ponto deve usar FOR UPDATE. */

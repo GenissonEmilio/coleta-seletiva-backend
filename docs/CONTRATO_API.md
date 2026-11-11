@@ -446,7 +446,9 @@ X-Ator-Id: 28
 
 ## Ações e versão
 
-Todas as mutações de solicitação, inclusive correção e reagendamento, recebem a versão esperada, por exemplo em `versao` no corpo; `API-15` fecha e testa essa convenção com todos os módulos. `@Version` no banco sem comparar a versão do cliente não basta para detectar um cliente desatualizado. Uma escrita concorrente também deve ser capturada e convertida em 409, com rollback do histórico.
+Envie a `versao` da última resposta ao alterar uma solicitação existente. O campo é um inteiro JSON não negativo. Valor ausente ou inválido retorna `400 ENTRADA_INVALIDA`. Versão antiga ou disputa entre duas escritas retorna `409 CONFLITO_VERSAO`. Após o conflito, consulte `GET /api/v1/solicitacoes/{id}` para obter os dados e a versão atuais.
+
+A API-15 mantém `@Version` para alterações na linha da solicitação e compara a versão no momento de gravar a correção que só troca itens. A transação vencedora incrementa a versão e grava a mudança com seu histórico. Na API-13, início, conclusão, reagendamento e tentativa sem sucesso devem seguir a mesma política, inclusive quando a ação gerar histórico sem mudar a situação.
 
 | Ação | Estado de origem | Dados/validações | Resultado |
 | --- | --- | --- | --- |
