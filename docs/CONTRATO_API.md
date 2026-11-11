@@ -326,13 +326,79 @@ X-Ator-Id: 8
 {"codigo": "ACESSO_NEGADO", "mensagem": "Operador só pode consultar os próprios dados.", "errosCampos": []}
 ```
 
-## Criação e correção de solicitação
+## Criação e correção de solicitação (API-10)
 
-Entrada: endereço do morador, ponto escolhido, observações e lista não vazia de `{materialId, quantidadeEstimada}`. O contexto de demonstração resolve o morador e a política definitiva sobre `moradorId`; não confiar em um ID enviado pelo navegador como prova de identidade.
+Todos os caminhos usam o prefixo `/api/v1`. Só o morador cria e corrige: enviar `X-Ator-Tipo: MORADOR` e `X-Ator-Id` (ver [contexto de demonstração](#operadores-e-contexto-de-demonstração-api-09)). O morador vem do contexto; o corpo não tem `moradorId`. Decisões em [docs/documentos-issues/issue-api-10](documentos-issues/issue-api-10/Registro_de_decisoes.md).
 
-Saída: protocolo único, situação `SOLICITADA`, data de criação, versão inicial, itens, cópias históricas e histórico inicial. Validar compatibilidade, situação, disponibilidade domiciliar, duplicidade, quantidades, limites e propriedade do endereço antes de confirmar a transação. Nenhum erro pode deixar cabeçalho, item ou histórico parcial.
+| Operação | Sucesso | Erros possíveis |
+| --- | --- | --- |
+| `POST /solicitacoes` | `201` com `Location` e `SolicitacaoResponse` | `400`, `403`, `404`, `409` |
+| `PUT /solicitacoes/{id}/dados` | `200` com `SolicitacaoResponse` | `400`, `403`, `404`, `409` |
 
-`PUT /solicitacoes/{id}/dados` recebe versão esperada e permite corrigir endereço/itens apenas em `SOLICITADA`; refaz todas as validações e registra a correção de forma auditável. Alterar endereço cadastrado ou unidade do material não reescreve cópias históricas de solicitações existentes.
+**Entrada da criação:** `enderecoId`, `pontoId`, `observacoes` (opcional) e `itens` não vazio de `{materialId, quantidadeEstimada}`. **Entrada da correção:** `versao` (a que o cliente leu), `enderecoId` e `itens` (a lista substitui todos os itens). O ponto e as observações não mudam na correção.
+
+**Saída (`SolicitacaoResponse`):** `id`, `protocolo` (`CS-AAAAMMDD-XXXXXX`, único), `situacao`, `versao`, `criadaEm`, `moradorId`, `pontoId`, `endereco` (cópia), `observacoes`, `itens` (com `unidade` copiada e `quantidadeEfetiva` nula até a conclusão) e `historico` em ordem cronológica. Datas saem em UTC (`...Z`).
+
+**Validações (criação e correção).** Qualquer erro não grava nada.
+
+| Situação | Resposta |
+| --- | --- |
+| Ator ausente, desconhecido ou que não é morador | `403 ACESSO_NEGADO` |
+| Campo obrigatório ausente, `itens` vazio | `400 ENTRADA_INVALIDA` apontando o campo |
+| Solicitação inexistente ou de outro morador (correção) | `404 REGISTRO_NAO_ENCONTRADO` |
+| `versao` diferente da gravada (correção) | `409 CONFLITO_VERSAO` |
+| Situação diferente de `SOLICITADA` (correção) | `409 TRANSICAO_INVALIDA` |
+| Endereço inexistente ou de outro morador | `404 REGISTRO_NAO_ENCONTRADO` |
+| Endereço inativo; ponto inativo ou sem recolhimento domiciliar | `409 REGRA_NEGOCIO` |
+| Ponto ou material inexistente | `404 REGISTRO_NAO_ENCONTRADO` |
+| Material repetido na lista | `400`, campo `itens[i].materialId` |
+| Quantidade zero, negativa, com mais de 3 casas ou fracionária para `UNIDADE` | `400`, campo `itens[i].quantidadeEstimada` |
+| Material inativo, não aceito pelo ponto ou acima do limite | `409 MATERIAL_INCOMPATIVEL` |
+
+**Cópias (RN04).** A solicitação guarda a cópia do endereço e cada item guarda a cópia da unidade. Alterar o cadastro do endereço ou a unidade do material depois não muda solicitações existentes.
+
+**Histórico.** A criação grava uma linha (`situacaoAnterior` nula, `situacaoNova` `SOLICITADA`). Cada correção grava uma linha `SOLICITADA` para `SOLICITADA` cujo `motivo` guarda o endereço e os itens **anteriores**. Responsável: `MORADOR` e o id dele.
+
+**Versão.** Começa em `0` e sobe 1 a cada correção. O cliente deve reenviar a `versao` da última resposta. Duas correções simultâneas com a mesma versão: uma confirma, a outra recebe `409 CONFLITO_VERSAO`.
+
+**Travas (combinado com a API-14).** Criar e corrigir travam a linha do ponto em modo compartilhado (`FOR SHARE`). Inativar o ponto ou remover um material aceito deve travar a mesma linha com `FOR UPDATE` **antes** de conferir as solicitações abertas. A correção trava antes a linha da solicitação (`FOR UPDATE`); a ordem é sempre solicitação e depois ponto.
+
+**Exemplo: criar**
+
+```http
+POST /api/v1/solicitacoes
+X-Ator-Tipo: MORADOR
+X-Ator-Id: 85
+
+{"enderecoId": 76, "pontoId": 103, "observacoes": "Portão azul",
+ "itens": [{"materialId": 171, "quantidadeEstimada": 2.5}, {"materialId": 172, "quantidadeEstimada": 12}]}
+```
+
+```http
+201 Created
+Location: /api/v1/solicitacoes/29
+
+{"id": 29, "protocolo": "CS-20261111-W9M78B", "situacao": "SOLICITADA", "versao": 0,
+ "criadaEm": "2026-11-11T18:44:19.095Z", "moradorId": 85, "pontoId": 103,
+ "endereco": {"enderecoId": 76, "logradouro": "Rua das Flores", "numero": "200", "semNumero": false,
+              "bairro": "Centro", "municipio": "Cidade Demonstração", "uf": "SE", "cep": "49000000",
+              "complemento": null},
+ "observacoes": "Portão azul",
+ "itens": [{"materialId": 172, "nomeMaterial": "Garrafa PET", "unidade": "UNIDADE", "quantidadeEstimada": 12,
+            "quantidadeEfetiva": null},
+           {"materialId": 171, "nomeMaterial": "Vidro", "unidade": "KG", "quantidadeEstimada": 2.5,
+            "quantidadeEfetiva": null}],
+ "historico": [{"situacaoAnterior": null, "situacaoNova": "SOLICITADA", "ocorridoEm": "2026-11-11T18:44:19.095Z",
+                "responsavelTipo": "MORADOR", "responsavelId": 85, "motivo": null}]}
+```
+
+**Exemplo: material não aceito pelo ponto**
+
+```http
+409 Conflict
+
+{"codigo": "MATERIAL_INCOMPATIVEL", "mensagem": "O ponto não aceita o material Papel.", "errosCampos": []}
+```
 
 ## Ações e versão
 
