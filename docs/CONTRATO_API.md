@@ -164,7 +164,7 @@ A resposta é `200`, com os mesmos campos do material e `ativo: false`. Ele cont
 - A API-10 deve chamar `MaterialService.buscarAtivoParaSolicitacao(id)` dentro da transação de criação/correção. Inexistente responde `404`; inativo, `409 MATERIAL_INCOMPATIVEL`. O método devolve o Model para o uso interno do serviço, e não para serialização HTTP. O item deve receber uma **cópia** da unidade naquele momento.
 - `QuantidadeMaterialService.validarPositiva(valor, unidade, campo)` atende estimativas e limites informados; `validarNaoNegativa` atende efetivos. Usar `BigDecimal`, aceitando no máximo 9 dígitos inteiros e 3 casas decimais significativas, sem arredondar; `UNIDADE` rejeita frações. `2.000` é inteiro. O parâmetro `campo` permite apontar, por exemplo, `itens[0].quantidadeEstimada`.
 - A API-07 deve pular a validação de limite quando ele for ausente. A API-13 deve usar a unidade **copiada no item**, e validar também que ao menos um efetivo seja positivo ao concluir. As validações de ponto/material aceito, limite e transação única pertencem aos serviços dessas operações.
-- Os serviços de solicitação ainda serão implementados na API-10/API-13; estes métodos são o contrato de integração da API-05. A consulta pública apenas de materiais disponíveis pertence à API-08.
+- A criação e a correção usam a validação de material ativo da API-05. A conclusão usa a validação de quantidades com a unidade copiada. A consulta pública de materiais disponíveis está na API-08.
 
 Decisões e validação: [registro da API-05](documentos-issues/issue-api-05/Registro_de_decisoes.md).
 
@@ -456,7 +456,7 @@ X-Ator-Id: 28
 
 Envie a `versao` da última resposta ao alterar uma solicitação existente. O campo é um inteiro JSON não negativo. Valor ausente ou inválido retorna `400 ENTRADA_INVALIDA`. Versão antiga ou disputa entre duas escritas retorna `409 CONFLITO_VERSAO`. Após o conflito, consulte `GET /api/v1/solicitacoes/{id}` para obter os dados e a versão atuais.
 
-A API-15 mantém `@Version` para alterações na linha da solicitação e compara a versão no momento de gravar a correção que só troca itens. A transação vencedora incrementa a versão e grava a mudança com seu histórico. Na API-13, início, conclusão, reagendamento e tentativa sem sucesso devem seguir a mesma política, inclusive quando a ação gerar histórico sem mudar a situação.
+A API-15 usa `@Version` para alterações na linha da solicitação. Correções que só trocam itens e reagendamentos para o mesmo horário incrementam a versão com uma condição sobre a versão lida. Início, conclusão, reagendamento e tentativa sem sucesso seguem a mesma política. A transação vencedora grava a mudança e o histórico juntos.
 
 | Ação | Estado de origem | Dados/validações | Resultado |
 | --- | --- | --- | --- |
@@ -481,6 +481,23 @@ As três ações usam `POST /api/v1/solicitacoes/{id}/<ação>`, recebem a vers�
 | `cancelamento` | Morador dono ou operador vinculado ao ponto | `{"versao":1,"motivo":"Solicitação duplicada"}` |
 
 A data de agendamento deve ter offset e representar um instante posterior ao atual. O histórico guarda o novo agendamento em `agendamentoNovo`. A recusa e o cancelamento exigem motivo com texto. Campos inválidos retornam `400`, tipo de ator sem permissão retorna `403` e solicitação inexistente ou fora do contexto retorna `404`. A versão antiga retorna `409 CONFLITO_VERSAO` e a transição proibida retorna `409 TRANSICAO_INVALIDA`.
+
+### Execução e tentativas (API-13)
+
+As ações usam `POST /api/v1/solicitacoes/{id}/<ação>` e exigem o contexto de um operador vinculado ao ponto. O retorno `200` traz a solicitação atualizada, a nova versão, os itens e o histórico.
+
+| Ação | Transição | Exemplo de corpo |
+| --- | --- | --- |
+| `inicio` | `AGENDADA` para `EM_RECOLHIMENTO` | `{"versao":1}` |
+| `conclusao` | `EM_RECOLHIMENTO` para `CONCLUIDA` | `{"versao":2,"itens":[{"materialId":1,"quantidadeEfetiva":2.5},{"materialId":2,"quantidadeEfetiva":0}]}` |
+| `reagendamento` | `AGENDADA` para `AGENDADA` | `{"versao":1,"agendadaPara":"2026-12-02T14:30:00-03:00","motivo":"Ajuste de rota"}` |
+| `tentativa-sem-sucesso` | `EM_RECOLHIMENTO` para `AGENDADA` | `{"versao":2,"agendadaPara":"2026-12-03T09:00:00-03:00","motivo":"Portão fechado"}` |
+
+A conclusão exige uma quantidade efetiva para cada material da solicitação, uma vez por material. Zero é aceito para itens não recolhidos quando pelo menos um efetivo é positivo. A validação usa a unidade copiada e os limites de precisão da API-05. O horário da conclusão vem do servidor e o responsável vem do contexto do operador. Os dois ficam registrados no evento de conclusão.
+
+Reagendamento e tentativa sem sucesso exigem motivo e um horário futuro com offset. O histórico conserva o agendamento anterior e a sequência de inícios. Cada falha acrescenta uma linha com data, operador, motivo e `agendamentoNovo` da próxima tentativa. Confirmar novamente o mesmo horário futuro também registra a justificativa e incrementa a versão.
+
+O tipo de ator sem permissão responde `403` e a solicitação inexistente ou fora do ponto do operador responde `404`. Entrada inválida retorna `400 ENTRADA_INVALIDA`. Versão antiga ou concorrente retorna `409 CONFLITO_VERSAO`, e transição proibida retorna `409 TRANSICAO_INVALIDA`.
 
 ## Contexto e privacidade
 

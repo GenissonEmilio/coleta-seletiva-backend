@@ -16,6 +16,9 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -59,6 +62,7 @@ import br.edu.ifs.web1.coletaseletiva.repository.SolicitacaoRepository;
 class SolicitacaoTransacaoIntegracaoTest {
 
     private static final String MARCA = "Transacao API-10";
+    private static final String EMAIL_OPERADOR = "transacao.api13.operador@exemplo.com";
     /** SQLSTATE do PostgreSQL para "lock_not_available" (NOWAIT sem conseguir a trava). */
     private static final String TRAVA_INDISPONIVEL = "55P03";
 
@@ -118,6 +122,9 @@ class SolicitacaoTransacaoIntegracaoTest {
         jdbc.update("DELETE FROM endereco WHERE morador_id IN (SELECT id FROM morador WHERE nome = ?)", MARCA);
         jdbc.update("DELETE FROM morador WHERE nome = ?", MARCA);
         jdbc.update("DELETE FROM material WHERE nome LIKE ?", MARCA + " %");
+        jdbc.update("DELETE FROM operador_ponto WHERE operador_id IN (SELECT id FROM operador WHERE email = ?)",
+                EMAIL_OPERADOR);
+        jdbc.update("DELETE FROM operador WHERE email = ?", EMAIL_OPERADOR);
         jdbc.update("DELETE FROM ponto_coleta WHERE nome = ?", MARCA);
     }
 
@@ -144,6 +151,72 @@ class SolicitacaoTransacaoIntegracaoTest {
                 .isEqualTo("SOLICITADA");
         assertThat(jdbc.queryForObject("SELECT versao FROM solicitacao WHERE id = ?", Long.class, id)).isZero();
         assertThat(linhasDoMorador()).containsExactly(1L, 1L, 1L);
+    }
+
+    @Test
+    void falhaNoHistoricoDaConclusaoReverteEstadoDataVersaoEItens() throws Exception {
+        long id = criarParaExecucao();
+        long operador = cadastrarOperadorDoPonto();
+        agendarExecucao(id, operador);
+        enviar(acaoOperador(id, "inicio", operador), "{\"versao\":1}");
+        doThrow(new IllegalStateException("falha simulada no histórico"))
+                .when(historicoRepository).save(any(HistoricoSolicitacaoModel.class));
+
+        mvc.perform(acaoOperador(id, "conclusao", operador).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"versao\":2,\"itens\":[{\"materialId\":" + vidro + ",\"quantidadeEfetiva\":2}]}"))
+                .andExpect(status().isInternalServerError());
+
+        assertThat(jdbc.queryForObject("SELECT situacao FROM solicitacao WHERE id = ?", String.class, id))
+                .isEqualTo("EM_RECOLHIMENTO");
+        assertThat(jdbc.queryForObject("SELECT concluida_em IS NULL FROM solicitacao WHERE id = ?", Boolean.class, id))
+                .isTrue();
+        assertThat(jdbc.queryForObject("SELECT versao FROM solicitacao WHERE id = ?", Long.class, id)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT quantidade_efetiva IS NULL FROM item_solicitacao WHERE solicitacao_id = ?",
+                Boolean.class, id)).isTrue();
+        assertThat(linhasDoMorador()).containsExactly(1L, 1L, 3L);
+    }
+
+    @Test
+    void reagendamentosConcorrentesNoMesmoHorarioGravamApenasUmEvento() throws Exception {
+        long id = criarParaExecucao();
+        long operador = cadastrarOperadorDoPonto();
+        String data = agendarExecucao(id, operador);
+        String corpo = "{\"versao\":1,\"agendadaPara\":\"%s\",\"motivo\":\"%s\"}";
+        MockHttpServletResponse perdedora = disputar(
+                acaoOperador(id, "reagendamento", operador).contentType(MediaType.APPLICATION_JSON)
+                        .content(corpo.formatted(data, "Primeira justificativa")), 200,
+                acaoOperador(id, "reagendamento", operador).contentType(MediaType.APPLICATION_JSON)
+                        .content(corpo.formatted(data, "Segunda justificativa")));
+
+        assertThat(perdedora.getStatus()).isEqualTo(409);
+        assertThat((String) JsonPath.read(perdedora.getContentAsString(), "$.codigo")).isEqualTo("CONFLITO_VERSAO");
+        assertThat(jdbc.queryForObject("SELECT versao FROM solicitacao WHERE id = ?", Long.class, id)).isEqualTo(2);
+        assertThat(jdbc.queryForList("SELECT motivo FROM historico_solicitacao WHERE solicitacao_id = ? AND motivo IS NOT NULL",
+                String.class, id)).containsExactly("Primeira justificativa");
+        assertThat(linhasDoMorador()).containsExactly(1L, 1L, 3L);
+    }
+
+    private long criarParaExecucao() throws Exception {
+        return idDe(criar(item(vidro, "2")).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString());
+    }
+
+    private long cadastrarOperadorDoPonto() {
+        long operador = jdbc.queryForObject("INSERT INTO operador (nome, email) VALUES (?, ?) RETURNING id",
+                Long.class, MARCA, EMAIL_OPERADOR);
+        jdbc.update("INSERT INTO operador_ponto (operador_id, ponto_id) VALUES (?, ?)", operador, ponto);
+        return operador;
+    }
+
+    private String agendarExecucao(long id, long operador) throws Exception {
+        String data = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1).truncatedTo(ChronoUnit.SECONDS).toString();
+        enviar(acaoOperador(id, "agendamento", operador), "{\"versao\":0,\"agendadaPara\":\"" + data + "\"}");
+        return data;
+    }
+
+    private MockHttpServletRequestBuilder acaoOperador(long id, String acao, long operador) {
+        return post("/api/v1/solicitacoes/" + id + "/" + acao)
+                .header("X-Ator-Tipo", "OPERADOR").header("X-Ator-Id", operador);
     }
 
     @Test
