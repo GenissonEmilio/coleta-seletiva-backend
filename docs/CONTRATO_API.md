@@ -270,6 +270,21 @@ Location: http://localhost:8080/api/v1/moradores/1/enderecos/1
  "page": 0, "size": 1, "totalElements": 2, "totalPages": 2}
 ```
 
+## Consulta pública (API-08)
+
+Todos os caminhos usam o prefixo `/api/v1`. Só leitura, sem dados de moradores ou operadores. Decisões em [docs/documentos-issues/issue-api-08](documentos-issues/issue-api-08/Registro_de_decisoes.md).
+
+| Operação | Sucesso | Erros possíveis |
+| --- | --- | --- |
+| `GET /publico/pontos?nome=&municipio=&bairro=&materialId=&page=&size=` | `200`, `PaginaResponse<PontoPublicoResponse>` | `400` |
+| `GET /publico/pontos/{id}` | `200`, `PontoPublicoDetalheResponse` | `404` (inexistente ou inativo) |
+| `GET /publico/materiais?page=&size=` | `200`, `PaginaResponse<MaterialResponse>` | `400` |
+
+- Só pontos ativos. Filtros opcionais e combináveis, sem diferenciar maiúsculas: `nome` contém o texto; `municipio` e `bairro` são iguais ao texto; `materialId` exige que o ponto aceite o material e que ele esteja ativo.
+- Ordem por nome do ponto, com `id` como desempate. Um ponto com vários materiais aparece uma vez só (filtro por `EXISTS`, sem `JOIN`).
+- `recolhimentoDomiciliar: false` identifica o ponto que não faz coleta em casa; a criação da solicitação continua barrando esse ponto (`PontoService.buscarDisponivelParaSolicitacao`).
+- O detalhe traz os materiais ativos aceitos (mesmo formato de `GET /pontos/{id}/materiais`), ordenados por nome, sem paginação.
+
 ## Criação e correção de solicitação
 
 Entrada: endereço do morador, ponto escolhido, observações e lista não vazia de `{materialId, quantidadeEstimada}`. O contexto de demonstração resolve o morador e a política definitiva sobre `moradorId`; não confiar em um ID enviado pelo navegador como prova de identidade.
