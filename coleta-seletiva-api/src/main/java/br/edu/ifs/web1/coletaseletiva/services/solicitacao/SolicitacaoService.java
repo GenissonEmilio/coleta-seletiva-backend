@@ -11,8 +11,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -27,8 +29,11 @@ import br.edu.ifs.web1.coletaseletiva.dto.common.PaginaResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.common.PaginacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.ItemSolicitacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoAgendamentoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoConclusaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoCorrecaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoEncerramentoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoInicioRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoReagendamentoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResumoResponse;
@@ -171,11 +176,8 @@ public class SolicitacaoService {
     public SolicitacaoResponse agendar(ContextoAtor ator, Long id, SolicitacaoAgendamentoRequest request) {
         SolicitacaoModel solicitacao = buscarParaAtendimento(ator, id);
         conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.SOLICITADA);
-        OffsetDateTime data = request.agendadaPara().withOffsetSameInstant(ZoneOffset.UTC);
-        if (!data.toInstant().isAfter(relogio.instant())) {
-            throw new EntradaInvalidaException("agendadaPara", "deve ser uma data e hora futuras");
-        }
-        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.AGENDADA, null, data);
+        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.AGENDADA, null,
+                conferirAgendamentoFuturo(request.agendadaPara()));
     }
 
     @Transactional
@@ -195,6 +197,81 @@ public class SolicitacaoService {
         return registrarAcao(solicitacao, ator, SituacaoSolicitacao.CANCELADA, request.motivo().strip(), null);
     }
 
+    @Transactional
+    public SolicitacaoResponse iniciar(ContextoAtor ator, Long id, SolicitacaoInicioRequest request) {
+        SolicitacaoModel solicitacao = buscarParaAtendimento(ator, id);
+        conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.AGENDADA);
+        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.EM_RECOLHIMENTO, null, null);
+    }
+
+    @Transactional
+    public SolicitacaoResponse concluir(ContextoAtor ator, Long id, SolicitacaoConclusaoRequest request) {
+        SolicitacaoModel solicitacao = buscarParaAtendimento(ator, id);
+        conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.EM_RECOLHIMENTO);
+        Map<ItemSolicitacaoModel, BigDecimal> efetivas = conferirQuantidadesEfetivas(solicitacao, request.itens());
+        OffsetDateTime instante = agora();
+
+        solicitacao.setSituacao(SituacaoSolicitacao.CONCLUIDA);
+        solicitacao.setConcluidaEm(instante);
+        garantirNovaVersao(solicitacao, request.versao());
+        efetivas.forEach(ItemSolicitacaoModel::setQuantidadeEfetiva);
+        solicitacaoRepository.flush();
+        gravarEvento(solicitacao, ator, SituacaoSolicitacao.EM_RECOLHIMENTO, instante, null, null);
+        return converter(solicitacao);
+    }
+
+    @Transactional
+    public SolicitacaoResponse reagendar(ContextoAtor ator, Long id, SolicitacaoReagendamentoRequest request) {
+        SolicitacaoModel solicitacao = buscarParaAtendimento(ator, id);
+        conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.AGENDADA);
+        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.AGENDADA, request.motivo().strip(),
+                conferirAgendamentoFuturo(request.agendadaPara()));
+    }
+
+    @Transactional
+    public SolicitacaoResponse registrarTentativaSemSucesso(ContextoAtor ator, Long id,
+            SolicitacaoReagendamentoRequest request) {
+        SolicitacaoModel solicitacao = buscarParaAtendimento(ator, id);
+        conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.EM_RECOLHIMENTO);
+        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.AGENDADA, request.motivo().strip(),
+                conferirAgendamentoFuturo(request.agendadaPara()));
+    }
+
+    private Map<ItemSolicitacaoModel, BigDecimal> conferirQuantidadesEfetivas(SolicitacaoModel solicitacao,
+            List<SolicitacaoConclusaoRequest.ItemRequest> itens) {
+        Map<Long, ItemSolicitacaoModel> porMaterial = solicitacao.getItens().stream()
+                .collect(Collectors.toMap(item -> item.getId().getMaterialId(), item -> item));
+        Map<ItemSolicitacaoModel, BigDecimal> efetivas = new HashMap<>();
+        for (int i = 0; i < itens.size(); i++) {
+            SolicitacaoConclusaoRequest.ItemRequest informado = itens.get(i);
+            String campo = "itens[" + i + "].";
+            ItemSolicitacaoModel item = porMaterial.get(informado.materialId());
+            if (item == null) {
+                throw new EntradaInvalidaException(campo + "materialId", "material não pertence à solicitação");
+            }
+            if (efetivas.containsKey(item)) {
+                throw new EntradaInvalidaException(campo + "materialId", "material repetido na conclusão");
+            }
+            quantidadeMaterialService.validarNaoNegativa(informado.quantidadeEfetiva(), item.getUnidade(),
+                    campo + "quantidadeEfetiva");
+            efetivas.put(item, informado.quantidadeEfetiva());
+        }
+        if (efetivas.size() != porMaterial.size()) {
+            throw new EntradaInvalidaException("itens", "informe a quantidade efetiva de todos os materiais");
+        }
+        if (efetivas.values().stream().noneMatch(quantidade -> quantidade.signum() > 0)) {
+            throw new EntradaInvalidaException("itens", "ao menos uma quantidade efetiva deve ser maior que zero");
+        }
+        return efetivas;
+    }
+
+    private OffsetDateTime conferirAgendamentoFuturo(OffsetDateTime data) {
+        if (!data.toInstant().isAfter(relogio.instant())) {
+            throw new EntradaInvalidaException("agendadaPara", "deve ser uma data e hora futuras");
+        }
+        return data.withOffsetSameInstant(ZoneOffset.UTC);
+    }
+
     private SolicitacaoModel buscarParaAtendimento(ContextoAtor ator, Long id) {
         if (!ator.is(TipoAtor.OPERADOR)) {
             throw new AcessoNegadoException("Operação permitida apenas ao operador do ponto.");
@@ -204,8 +281,7 @@ public class SolicitacaoService {
 
     private void conferirAcao(SolicitacaoModel solicitacao, Long versao, SituacaoSolicitacao... permitidas) {
         if (!solicitacao.getVersao().equals(versao)) {
-            throw new RegraNegocioException(CodigoErro.CONFLITO_VERSAO,
-                    "A solicitação foi alterada por outra operação. Recarregue e tente novamente.");
+            throw conflitoVersao();
         }
         if (!Arrays.asList(permitidas).contains(solicitacao.getSituacao())) {
             throw new RegraNegocioException(CodigoErro.TRANSICAO_INVALIDA,
@@ -216,18 +292,23 @@ public class SolicitacaoService {
     private SolicitacaoResponse registrarAcao(SolicitacaoModel solicitacao, ContextoAtor ator,
             SituacaoSolicitacao nova, String motivo, OffsetDateTime agendamento) {
         SituacaoSolicitacao anterior = solicitacao.getSituacao();
+        Long versaoLida = solicitacao.getVersao();
         solicitacao.setSituacao(nova);
         if (agendamento != null) {
             solicitacao.setAgendadaPara(agendamento);
         }
-        solicitacaoRepository.flush();
+        garantirNovaVersao(solicitacao, versaoLida);
+        gravarEvento(solicitacao, ator, anterior, agora(), motivo, agendamento);
+        return converter(solicitacao);
+    }
 
+    private void gravarEvento(SolicitacaoModel solicitacao, ContextoAtor ator, SituacaoSolicitacao anterior,
+            OffsetDateTime instante, String motivo, OffsetDateTime agendamento) {
         ResponsavelTipo responsavel = ator.is(TipoAtor.OPERADOR) ? ResponsavelTipo.OPERADOR : ResponsavelTipo.MORADOR;
-        HistoricoSolicitacaoModel evento = new HistoricoSolicitacaoModel(solicitacao, anterior, nova, agora(),
-                responsavel, ator.id(), motivo);
+        HistoricoSolicitacaoModel evento = new HistoricoSolicitacaoModel(solicitacao, anterior,
+                solicitacao.getSituacao(), instante, responsavel, ator.id(), motivo);
         evento.setAgendamentoNovo(agendamento);
         historicoRepository.save(evento);
-        return converter(solicitacao);
     }
 
     /**
@@ -341,9 +422,9 @@ public class SolicitacaoService {
         return protocolo;
     }
 
-    /** Confirma a versão da linha antes de substituir os itens, dentro da mesma transação. */
+    /** Confirma a versão antes de alterar itens ou gravar histórico, mesmo quando a linha não mudou. */
     private void garantirNovaVersao(SolicitacaoModel solicitacao, Long versaoLida) {
-        // Se o endereço mudou, @Version já verifica e incrementa a versão no flush.
+        // Se a solicitação mudou, @Version já verifica e incrementa a versão no flush.
         solicitacaoRepository.flush();
         if (solicitacao.getVersao().equals(versaoLida)) {
             if (solicitacaoRepository.incrementarVersao(solicitacao.getId(), versaoLida) == 0) {

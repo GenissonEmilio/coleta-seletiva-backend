@@ -22,8 +22,11 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import br.edu.ifs.web1.coletaseletiva.dto.common.PaginaResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.common.PaginacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoAgendamentoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoConclusaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoCorrecaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoEncerramentoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoInicioRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoReagendamentoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResumoResponse;
@@ -100,6 +103,42 @@ public class SolicitacaoController {
             @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
             @PathVariable Long id, @Valid @RequestBody SolicitacaoEncerramentoRequest request) {
         return solicitacaoService.cancelar(contextoService.resolver(atorTipo, atorId), id, request);
+    }
+
+    @PostMapping("/{id}/inicio")
+    @Operation(summary = "Inicia o recolhimento de uma solicitação agendada do ponto do operador")
+    public SolicitacaoResponse iniciar(
+            @RequestHeader(name = ContextoService.CABECALHO_TIPO, required = false) String atorTipo,
+            @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
+            @PathVariable Long id, @Valid @RequestBody SolicitacaoInicioRequest request) {
+        return solicitacaoService.iniciar(contextoService.resolver(atorTipo, atorId), id, request);
+    }
+
+    @PostMapping("/{id}/conclusao")
+    @Operation(summary = "Conclui o recolhimento com a quantidade efetiva de cada item")
+    public SolicitacaoResponse concluir(
+            @RequestHeader(name = ContextoService.CABECALHO_TIPO, required = false) String atorTipo,
+            @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
+            @PathVariable Long id, @Valid @RequestBody SolicitacaoConclusaoRequest request) {
+        return solicitacaoService.concluir(contextoService.resolver(atorTipo, atorId), id, request);
+    }
+
+    @PostMapping("/{id}/reagendamento")
+    @Operation(summary = "Reagenda uma solicitação agendada com motivo e data futura")
+    public SolicitacaoResponse reagendar(
+            @RequestHeader(name = ContextoService.CABECALHO_TIPO, required = false) String atorTipo,
+            @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
+            @PathVariable Long id, @Valid @RequestBody SolicitacaoReagendamentoRequest request) {
+        return solicitacaoService.reagendar(contextoService.resolver(atorTipo, atorId), id, request);
+    }
+
+    @PostMapping("/{id}/tentativa-sem-sucesso")
+    @Operation(summary = "Registra a tentativa sem sucesso e agenda a próxima coleta")
+    public SolicitacaoResponse registrarTentativaSemSucesso(
+            @RequestHeader(name = ContextoService.CABECALHO_TIPO, required = false) String atorTipo,
+            @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
+            @PathVariable Long id, @Valid @RequestBody SolicitacaoReagendamentoRequest request) {
+        return solicitacaoService.registrarTentativaSemSucesso(contextoService.resolver(atorTipo, atorId), id, request);
     }
 
     @GetMapping

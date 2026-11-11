@@ -22,6 +22,7 @@ import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,11 +34,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Criação e correção de solicitação (API-10) com o banco real; dados desfeitos ao fim de cada teste. */
+/** Fluxo de solicitações com o banco real e rollback dos dados ao fim de cada teste. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 class SolicitacaoIntegracaoTest {
+
+    private static final String AGENDAMENTO = "2026-11-12T12:00:00Z";
 
     @TestBean
     Clock relogio;
@@ -372,6 +375,146 @@ class SolicitacaoIntegracaoTest {
         acao(id, "cancelamento", "MORADOR", maria, "{\"versao\":0.5,\"motivo\":\"Desisti\"}")
                 .andExpect(status().isBadRequest());
         assertThat(contar("historico_solicitacao WHERE solicitacao_id = " + id)).isEqualTo(1);
+    }
+
+    @Test
+    void execucaoPreservaTentativasEConcluiComAsUnidadesCopiadas() throws Exception {
+        long id = criarSolicitacaoComDoisItens();
+        long operador = operador(true);
+        agendarExecucao(id, operador);
+
+        acao(id, "reagendamento", "OPERADOR", operador,
+                reagendamento(1, "2026-11-13T09:00:00-03:00", "Ajuste de rota"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versao").value(2))
+                .andExpect(jsonPath("$.agendadaPara").value("2026-11-13T12:00:00Z"));
+        acao(id, "inicio", "OPERADOR", operador, "{\"versao\":2}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.situacao").value("EM_RECOLHIMENTO"))
+                .andExpect(jsonPath("$.versao").value(3));
+
+        acao(id, "tentativa-sem-sucesso", "OPERADOR", operador,
+                reagendamento(3, "2026-11-14T12:00:00Z", "Portão fechado"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.situacao").value("AGENDADA"))
+                .andExpect(jsonPath("$.versao").value(4))
+                .andExpect(jsonPath("$.itens[0].quantidadeEfetiva").doesNotExist());
+        acao(id, "inicio", "OPERADOR", operador, "{\"versao\":4}").andExpect(status().isOk());
+        mvc.perform(put("/api/v1/materiais/" + vidro).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"nome\":\"Vidro\",\"unidade\":\"UNIDADE\"}")).andExpect(status().isOk());
+
+        String itens = "[%s,%s]".formatted(itemEfetivo(garrafa, "0"), itemEfetivo(vidro, "2.25"));
+        acao(id, "conclusao", "OPERADOR", operador, conclusao(4, itens))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("CONFLITO_VERSAO"));
+        acao(id, "conclusao", "OPERADOR", operador, conclusao(5, itens))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.situacao").value("CONCLUIDA"))
+                .andExpect(jsonPath("$.versao").value(6))
+                .andExpect(jsonPath("$.concluidaEm").value("2026-11-11T12:00:00Z"))
+                .andExpect(jsonPath("$.itens[0].quantidadeEfetiva").value(0))
+                .andExpect(jsonPath("$.itens[1].unidade").value("KG"))
+                .andExpect(jsonPath("$.itens[1].quantidadeEfetiva").value(2.25));
+        acao(id, "inicio", "OPERADOR", operador, "{\"versao\":6}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("TRANSICAO_INVALIDA"));
+
+        mvc.perform(get("/api/v1/solicitacoes/" + id + "/historico")
+                .header("X-Ator-Tipo", "MORADOR").header("X-Ator-Id", maria))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(7))
+                .andExpect(jsonPath("$[1].agendamentoNovo").value(AGENDAMENTO))
+                .andExpect(jsonPath("$[2].situacaoAnterior").value("AGENDADA"))
+                .andExpect(jsonPath("$[2].agendamentoNovo").value("2026-11-13T12:00:00Z"))
+                .andExpect(jsonPath("$[2].motivo").value("Ajuste de rota"))
+                .andExpect(jsonPath("$[4].situacaoAnterior").value("EM_RECOLHIMENTO"))
+                .andExpect(jsonPath("$[4].situacaoNova").value("AGENDADA"))
+                .andExpect(jsonPath("$[4].motivo").value("Portão fechado"))
+                .andExpect(jsonPath("$[4].agendamentoNovo").value("2026-11-14T12:00:00Z"))
+                .andExpect(jsonPath("$[6].situacaoNova").value("CONCLUIDA"))
+                .andExpect(jsonPath("$[6].responsavelTipo").value("OPERADOR"))
+                .andExpect(jsonPath("$[6].responsavelId").value(operador))
+                .andExpect(jsonPath("$[6].ocorridoEm").value("2026-11-11T12:00:00Z"));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            [{"materialId":VIDRO,"quantidadeEfetiva":1}] | itens
+            [{"materialId":VIDRO,"quantidadeEfetiva":1},{"materialId":99999999,"quantidadeEfetiva":0}] | itens[1].materialId
+            [{"materialId":VIDRO,"quantidadeEfetiva":1},{"materialId":VIDRO,"quantidadeEfetiva":1}] | itens[1].materialId
+            [{"materialId":VIDRO,"quantidadeEfetiva":1},{"materialId":GARRAFA,"quantidadeEfetiva":-1}] | itens[1].quantidadeEfetiva
+            [{"materialId":VIDRO,"quantidadeEfetiva":1},{"materialId":GARRAFA,"quantidadeEfetiva":1.5}] | itens[1].quantidadeEfetiva
+            [{"materialId":VIDRO,"quantidadeEfetiva":0},{"materialId":GARRAFA,"quantidadeEfetiva":0}] | itens
+            """)
+    void conclusaoInvalidaMantemVersaoItensEHistorico(String itens, String campo) throws Exception {
+        long id = criarSolicitacaoComDoisItens();
+        long operador = operador(true);
+        agendarExecucao(id, operador);
+        acao(id, "inicio", "OPERADOR", operador, "{\"versao\":1}").andExpect(status().isOk());
+
+        String itensComIds = itens.replace("VIDRO", Long.toString(vidro)).replace("GARRAFA", Long.toString(garrafa));
+        acao(id, "conclusao", "OPERADOR", operador, conclusao(2, itensComIds))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errosCampos[0].campo").value(campo));
+
+        assertThat(jdbc.queryForObject("SELECT situacao FROM solicitacao WHERE id = ?", String.class, id))
+                .isEqualTo("EM_RECOLHIMENTO");
+        assertThat(jdbc.queryForObject("SELECT versao FROM solicitacao WHERE id = ?", Long.class, id)).isEqualTo(2);
+        assertThat(contar("item_solicitacao WHERE solicitacao_id = " + id + " AND quantidade_efetiva IS NOT NULL"))
+                .isZero();
+        assertThat(contar("historico_solicitacao WHERE solicitacao_id = " + id)).isEqualTo(3);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void reagendamentoETentativaExigemMotivoEDataFutura(boolean emRecolhimento) throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        long operador = operador(true);
+        agendarExecucao(id, operador);
+        if (emRecolhimento) {
+            acao(id, "inicio", "OPERADOR", operador, "{\"versao\":1}").andExpect(status().isOk());
+        }
+        int versao = emRecolhimento ? 2 : 1;
+        String acao = emRecolhimento ? "tentativa-sem-sucesso" : "reagendamento";
+        acao(id, acao, "OPERADOR", operador, reagendamento(versao, AGENDAMENTO, " "))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errosCampos[0].campo").value("motivo"));
+        acao(id, acao, "OPERADOR", operador, reagendamento(versao, "2026-11-11T12:00:00Z", "Justificativa"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errosCampos[0].campo").value("agendadaPara"));
+        assertThat(contar("historico_solicitacao WHERE solicitacao_id = " + id)).isEqualTo(versao + 1L);
+    }
+
+    @Test
+    void inicioExigeOperadorVinculadoEVersaoEEstadoValidos() throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        long operador = operador(true);
+        acao(id, "inicio", "OPERADOR", operador, "{\"versao\":0}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.codigo").value("TRANSICAO_INVALIDA"));
+        agendarExecucao(id, operador);
+        acao(id, "inicio", "MORADOR", maria, "{\"versao\":1}").andExpect(status().isForbidden());
+        acao(id, "inicio", "OPERADOR", operador(false), "{\"versao\":1}").andExpect(status().isNotFound());
+        acao(id, "inicio", "OPERADOR", operador, "{}").andExpect(status().isBadRequest());
+        acao(id, "inicio", "OPERADOR", operador, "{\"versao\":1.5}").andExpect(status().isBadRequest());
+        assertThat(contar("historico_solicitacao WHERE solicitacao_id = " + id)).isEqualTo(2);
+    }
+
+    private long criarSolicitacaoComDoisItens() throws Exception {
+        return idDe(criar(maria, corpo(enderecoDaMaria, ponto, item(vidro, "2.5"), item(garrafa, "3")))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    private void agendarExecucao(long id, long operador) throws Exception {
+        acao(id, "agendamento", "OPERADOR", operador, "{\"versao\":0,\"agendadaPara\":\"" + AGENDAMENTO + "\"}")
+                .andExpect(status().isOk());
+    }
+
+    private static String reagendamento(int versao, String data, String motivo) {
+        return "{\"versao\":%d,\"agendadaPara\":\"%s\",\"motivo\":\"%s\"}".formatted(versao, data, motivo);
+    }
+
+    private static String conclusao(int versao, String itens) {
+        return "{\"versao\":%d,\"itens\":%s}".formatted(versao, itens);
+    }
+
+    private static String itemEfetivo(long materialId, String quantidade) {
+        return "{\"materialId\":%d,\"quantidadeEfetiva\":%s}".formatted(materialId, quantidade);
     }
 
     private long criarSolicitacaoParaAcao() throws Exception {
