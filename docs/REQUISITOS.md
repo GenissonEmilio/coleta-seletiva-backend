@@ -65,4 +65,5 @@ Aberta = SOLICITADA, AGENDADA ou EM_RECOLHIMENTO. Estados finais = CONCLUIDA, RE
 7. Falha de execução e reagendamento preservando a tentativa anterior.
 8. Reiniciar, confirmar persistência e conferir indicadores sem misturar unidades.
 
-Registrar resultados reais em `API-17`/`API-18`; estes cenários ainda não foram executados.
+O roteiro executável e os resultados dos oito cenários estão registrados na
+[evidência de aceite da API-17](evidencias/api-17-aceite.md).

@@ -52,8 +52,8 @@ podem ser configuradas na IDE. Não versione credenciais reais.
 
 ## Execução e testes
 
-Execute os comandos na pasta `coleta-seletiva-api`, onde está o `pom.xml`,
-usando o mesmo terminal em que configurou as variáveis.
+Execute os comandos do Maven Wrapper na pasta `coleta-seletiva-api`, onde está o
+`pom.xml`, usando o terminal em que configurou as variáveis.
 
 ### Conferir o ambiente
 
@@ -65,12 +65,40 @@ A saída deve indicar Java 21 e a versão do Maven utilizada pelo projeto.
 
 ### Executar os testes
 
+Com JDK 21, Python 3 e Docker em execução, rode a partir da raiz do repositório
+no Linux, macOS ou WSL.
+
+```bash
+python3 coleta-seletiva-api/scripts/validar_api.py
+```
+
+O roteiro cria um PostgreSQL 17 descartável com credenciais temporárias e porta
+local escolhida pelo Docker. O Maven executa a suíte e grava os relatórios em
+`coleta-seletiva-api/target/surefire-reports`. O container é encerrado ao final.
+
+Para usar seu próprio PostgreSQL, configure as variáveis para um banco reservado
+aos testes e rode o Maven Wrapper na pasta da API.
+
 ```bash
 ./mvnw test
 ```
 
-O comando deve concluir com `BUILD SUCCESS`. Os testes que carregam a
-aplicação dependem do PostgreSQL disponível e das variáveis configuradas.
+### Executar os oito cenários de aceite
+
+Com a API-13 e a API-16 integradas ao checkout, rode a partir da raiz.
+
+```bash
+python3 coleta-seletiva-api/scripts/validar_api.py --aceite
+```
+
+O roteiro roda a suíte, gera o JAR e percorre os oito cenários via HTTP. No
+último cenário ele inicia outro processo da aplicação com o mesmo banco
+descartável e confere os registros e indicadores. A saída informa o resultado
+de cada cenário. O roteiro e a evidência da execução estão em
+[Aceite da API-17](docs/evidencias/api-17-aceite.md).
+
+Nos notebooks que usam `codex-build`, execute o roteiro pelo limitador descrito
+em [Como contribuir](CONTRIBUTING.md#validações-neste-notebook).
 
 ### Iniciar a aplicação
 
