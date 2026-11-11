@@ -4,17 +4,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jakarta.validation.ConstraintViolationException;
+import jakarta.persistence.OptimisticLockException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -51,8 +52,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     // ---------- Persistência ----------
 
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ResponseEntity<Object> conflitoVersao(ObjectOptimisticLockingFailureException ex) {
+    @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class})
+    public ResponseEntity<Object> conflitoVersao() {
         return resposta(CodigoErro.CONFLITO_VERSAO,
                 "O registro foi alterado por outra operação. Recarregue e tente novamente.", List.of());
     }

@@ -141,12 +141,11 @@ public class SolicitacaoService {
     /** Só em SOLICITADA (RN04). Refaz todas as validações e guarda os dados anteriores no histórico. */
     @Transactional
     public SolicitacaoResponse corrigir(ContextoAtor morador, Long id, SolicitacaoCorrecaoRequest request) {
-        SolicitacaoModel solicitacao = solicitacaoRepository.travarParaAlteracao(id, morador.id())
+        SolicitacaoModel solicitacao = solicitacaoRepository.findByIdAndMoradorId(id, morador.id())
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Solicitação", id));
         Long versaoLida = solicitacao.getVersao();
         if (!versaoLida.equals(request.versao())) {
-            throw new RegraNegocioException(CodigoErro.CONFLITO_VERSAO,
-                    "A solicitação foi alterada por outra operação. Recarregue e tente novamente.");
+            throw conflitoVersao();
         }
         if (solicitacao.getSituacao() != SituacaoSolicitacao.SOLICITADA) {
             throw new RegraNegocioException(CodigoErro.TRANSICAO_INVALIDA,
@@ -158,13 +157,13 @@ public class SolicitacaoService {
         String dadosAnteriores = descreverDadosAtuais(solicitacao);
 
         solicitacao.copiarEndereco(endereco);
+        garantirNovaVersao(solicitacao, versaoLida);
         solicitacao.getItens().clear();
         solicitacaoRepository.flush();
         adicionarItens(solicitacao, itens);
         historicoRepository.save(new HistoricoSolicitacaoModel(solicitacao, SituacaoSolicitacao.SOLICITADA,
                 SituacaoSolicitacao.SOLICITADA, agora(), ResponsavelTipo.MORADOR, morador.id(), dadosAnteriores));
         solicitacaoRepository.flush();
-        garantirNovaVersao(solicitacao, versaoLida);
         return converter(solicitacao);
     }
 
@@ -342,16 +341,21 @@ public class SolicitacaoService {
         return protocolo;
     }
 
-    /**
-     * Trocar só os itens não altera a linha da solicitação, e o Hibernate não subiria a versão.
-     * Neste caso a versão é somada direto no banco (a linha já está travada por esta transação)
-     * e a solicitação é relida, para toda correção devolver versão nova.
-     */
+    /** Confirma a versão da linha antes de substituir os itens, dentro da mesma transação. */
     private void garantirNovaVersao(SolicitacaoModel solicitacao, Long versaoLida) {
+        // Se o endereço mudou, @Version já verifica e incrementa a versão no flush.
+        solicitacaoRepository.flush();
         if (solicitacao.getVersao().equals(versaoLida)) {
-            solicitacaoRepository.incrementarVersao(solicitacao.getId());
+            if (solicitacaoRepository.incrementarVersao(solicitacao.getId(), versaoLida) == 0) {
+                throw conflitoVersao();
+            }
             entityManager.refresh(solicitacao);
         }
+    }
+
+    private RegraNegocioException conflitoVersao() {
+        return new RegraNegocioException(CodigoErro.CONFLITO_VERSAO,
+                "A solicitação foi alterada por outra operação. Recarregue e tente novamente.");
     }
 
     /** Texto guardado no motivo do histórico da correção: o que valia antes de corrigir. */
