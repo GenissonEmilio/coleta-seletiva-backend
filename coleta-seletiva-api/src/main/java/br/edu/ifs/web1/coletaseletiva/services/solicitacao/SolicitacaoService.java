@@ -2,6 +2,7 @@ package br.edu.ifs.web1.coletaseletiva.services.solicitacao;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -25,10 +26,13 @@ import org.springframework.transaction.annotation.Transactional;
 import br.edu.ifs.web1.coletaseletiva.dto.common.PaginaResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.common.PaginacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.ItemSolicitacaoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoAgendamentoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoCorrecaoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoEncerramentoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResumoResponse;
+import br.edu.ifs.web1.coletaseletiva.exception.AcessoNegadoException;
 import br.edu.ifs.web1.coletaseletiva.exception.CodigoErro;
 import br.edu.ifs.web1.coletaseletiva.exception.EntradaInvalidaException;
 import br.edu.ifs.web1.coletaseletiva.exception.RecursoNaoEncontradoException;
@@ -84,6 +88,7 @@ public class SolicitacaoService {
     private final QuantidadeMaterialService quantidadeMaterialService;
     private final PaginacaoService paginacaoService;
     private final EntityManager entityManager;
+    private final Clock relogio;
     private final SecureRandom sorteio = new SecureRandom();
 
     public SolicitacaoService(SolicitacaoRepository solicitacaoRepository,
@@ -91,7 +96,7 @@ public class SolicitacaoService {
             EnderecoRepository enderecoRepository, PontoRepository pontoRepository,
             PontoMaterialRepository pontoMaterialRepository, PontoService pontoService,
             MaterialService materialService, QuantidadeMaterialService quantidadeMaterialService,
-            PaginacaoService paginacaoService, EntityManager entityManager) {
+            PaginacaoService paginacaoService, EntityManager entityManager, Clock relogio) {
         this.solicitacaoRepository = solicitacaoRepository;
         this.historicoRepository = historicoRepository;
         this.moradorRepository = moradorRepository;
@@ -103,6 +108,7 @@ public class SolicitacaoService {
         this.quantidadeMaterialService = quantidadeMaterialService;
         this.paginacaoService = paginacaoService;
         this.entityManager = entityManager;
+        this.relogio = relogio;
     }
 
     /** Item já conferido: material ativo, aceito pelo ponto, quantidade válida e dentro do limite. */
@@ -159,6 +165,69 @@ public class SolicitacaoService {
                 SituacaoSolicitacao.SOLICITADA, agora(), ResponsavelTipo.MORADOR, morador.id(), dadosAnteriores));
         solicitacaoRepository.flush();
         garantirNovaVersao(solicitacao, versaoLida);
+        return converter(solicitacao);
+    }
+
+    @Transactional
+    public SolicitacaoResponse agendar(ContextoAtor ator, Long id, SolicitacaoAgendamentoRequest request) {
+        SolicitacaoModel solicitacao = buscarParaAtendimento(ator, id);
+        conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.SOLICITADA);
+        OffsetDateTime data = request.agendadaPara().withOffsetSameInstant(ZoneOffset.UTC);
+        if (!data.toInstant().isAfter(relogio.instant())) {
+            throw new EntradaInvalidaException("agendadaPara", "deve ser uma data e hora futuras");
+        }
+        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.AGENDADA, null, data);
+    }
+
+    @Transactional
+    public SolicitacaoResponse recusar(ContextoAtor ator, Long id, SolicitacaoEncerramentoRequest request) {
+        SolicitacaoModel solicitacao = buscarParaAtendimento(ator, id);
+        conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.SOLICITADA);
+        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.RECUSADA, request.motivo().strip(), null);
+    }
+
+    @Transactional
+    public SolicitacaoResponse cancelar(ContextoAtor ator, Long id, SolicitacaoEncerramentoRequest request) {
+        if (ator.is(TipoAtor.ADMINISTRADOR)) {
+            throw new AcessoNegadoException("Cancelamento permitido ao morador dono ou ao operador do ponto.");
+        }
+        SolicitacaoModel solicitacao = buscarNoContexto(ator, id);
+        conferirAcao(solicitacao, request.versao(), SituacaoSolicitacao.SOLICITADA, SituacaoSolicitacao.AGENDADA);
+        return registrarAcao(solicitacao, ator, SituacaoSolicitacao.CANCELADA, request.motivo().strip(), null);
+    }
+
+    private SolicitacaoModel buscarParaAtendimento(ContextoAtor ator, Long id) {
+        if (!ator.is(TipoAtor.OPERADOR)) {
+            throw new AcessoNegadoException("Operação permitida apenas ao operador do ponto.");
+        }
+        return buscarNoContexto(ator, id);
+    }
+
+    private void conferirAcao(SolicitacaoModel solicitacao, Long versao, SituacaoSolicitacao... permitidas) {
+        if (!solicitacao.getVersao().equals(versao)) {
+            throw new RegraNegocioException(CodigoErro.CONFLITO_VERSAO,
+                    "A solicitação foi alterada por outra operação. Recarregue e tente novamente.");
+        }
+        if (!Arrays.asList(permitidas).contains(solicitacao.getSituacao())) {
+            throw new RegraNegocioException(CodigoErro.TRANSICAO_INVALIDA,
+                    "A ação não é permitida na situação atual da solicitação.");
+        }
+    }
+
+    private SolicitacaoResponse registrarAcao(SolicitacaoModel solicitacao, ContextoAtor ator,
+            SituacaoSolicitacao nova, String motivo, OffsetDateTime agendamento) {
+        SituacaoSolicitacao anterior = solicitacao.getSituacao();
+        solicitacao.setSituacao(nova);
+        if (agendamento != null) {
+            solicitacao.setAgendadaPara(agendamento);
+        }
+        solicitacaoRepository.flush();
+
+        ResponsavelTipo responsavel = ator.is(TipoAtor.OPERADOR) ? ResponsavelTipo.OPERADOR : ResponsavelTipo.MORADOR;
+        HistoricoSolicitacaoModel evento = new HistoricoSolicitacaoModel(solicitacao, anterior, nova, agora(),
+                responsavel, ator.id(), motivo);
+        evento.setAgendamentoNovo(agendamento);
+        historicoRepository.save(evento);
         return converter(solicitacao);
     }
 
@@ -336,8 +405,8 @@ public class SolicitacaoService {
     }
 
     /** Sempre em UTC: é assim que o banco devolve o timestamptz, então a resposta fica uniforme. */
-    private static OffsetDateTime agora() {
-        return OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
+    private OffsetDateTime agora() {
+        return relogio.instant().atOffset(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
 
     /** O banco devolve numeric(12,3) como 20.000; a resposta mostra 20, igual às outras consultas. */

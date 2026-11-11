@@ -116,6 +116,24 @@ class SolicitacaoTransacaoIntegracaoTest {
     }
 
     @Test
+    void falhaNoHistoricoDoCancelamentoReverteSituacaoEVersao() throws Exception {
+        long id = idDe(criar(item(vidro, "2")).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString());
+        doThrow(new IllegalStateException("falha simulada no histórico"))
+                .when(historicoRepository).save(any(HistoricoSolicitacaoModel.class));
+
+        mvc.perform(post("/api/v1/solicitacoes/" + id + "/cancelamento").header("X-Ator-Tipo", "MORADOR")
+                .header("X-Ator-Id", morador).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"versao\":0,\"motivo\":\"Desisti\"}"))
+                .andExpect(status().isInternalServerError());
+
+        assertThat(jdbc.queryForObject("SELECT situacao FROM solicitacao WHERE id = ?", String.class, id))
+                .isEqualTo("SOLICITADA");
+        assertThat(jdbc.queryForObject("SELECT versao FROM solicitacao WHERE id = ?", Long.class, id)).isZero();
+        assertThat(linhasDoMorador()).containsExactly(1L, 1L, 1L);
+    }
+
+    @Test
     void segundoItemIncompativelNaoDeixaLinhasParciais() throws Exception {
         criar(item(vidro, "2") + "," + item(papel, "1"))
                 .andExpect(status().isConflict())

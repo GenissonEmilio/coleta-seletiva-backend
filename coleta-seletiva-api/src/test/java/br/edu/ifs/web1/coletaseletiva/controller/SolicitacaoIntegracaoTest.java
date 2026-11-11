@@ -3,12 +3,17 @@ package br.edu.ifs.web1.coletaseletiva.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import jakarta.persistence.EntityManager;
 
@@ -23,6 +28,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +38,13 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @Transactional
 class SolicitacaoIntegracaoTest {
+
+    @TestBean
+    Clock relogio;
+
+    static Clock relogio() {
+        return Clock.fixed(Instant.parse("2026-11-11T12:00:00Z"), ZoneOffset.UTC);
+    }
 
     @Autowired
     MockMvc mvc;
@@ -262,6 +275,122 @@ class SolicitacaoIntegracaoTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("TRANSICAO_INVALIDA"));
         assertThat(contar("historico_solicitacao WHERE solicitacao_id = " + id)).isEqualTo(1);
+    }
+
+    @Test
+    void agendamentoFuturoRegistraEventoEPermiteCancelamentoPeloDono() throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        long operador = operador(true);
+
+        acao(id, "agendamento", "OPERADOR", operador,
+                "{\"versao\":0,\"agendadaPara\":\"2026-11-11T09:30:00-03:00\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.situacao").value("AGENDADA"))
+                .andExpect(jsonPath("$.versao").value(1))
+                .andExpect(jsonPath("$.agendadaPara").value("2026-11-11T12:30:00Z"))
+                .andExpect(jsonPath("$.historico[1].situacaoAnterior").value("SOLICITADA"))
+                .andExpect(jsonPath("$.historico[1].situacaoNova").value("AGENDADA"))
+                .andExpect(jsonPath("$.historico[1].ocorridoEm").value("2026-11-11T12:00:00Z"))
+                .andExpect(jsonPath("$.historico[1].responsavelTipo").value("OPERADOR"))
+                .andExpect(jsonPath("$.historico[1].responsavelId").value(operador))
+                .andExpect(jsonPath("$.historico[1].agendamentoNovo").value("2026-11-11T12:30:00Z"));
+
+        acao(id, "cancelamento", "MORADOR", maria, "{\"versao\":0,\"motivo\":\"Desisti\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CONFLITO_VERSAO"));
+        acao(id, "cancelamento", "MORADOR", maria, "{\"versao\":1,\"motivo\":\"Desisti\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versao").value(2))
+                .andExpect(jsonPath("$.historico[2].situacaoAnterior").value("AGENDADA"))
+                .andExpect(jsonPath("$.historico[2].situacaoNova").value("CANCELADA"))
+                .andExpect(jsonPath("$.historico[2].responsavelTipo").value("MORADOR"))
+                .andExpect(jsonPath("$.historico[2].responsavelId").value(maria))
+                .andExpect(jsonPath("$.historico[2].motivo").value("Desisti"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-11-11T08:59:59-03:00", "2026-11-11T09:00:00-03:00"})
+    void agendamentoNoPassadoOuNoInstanteAtualNaoMudaSolicitacao(String data) throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        acao(id, "agendamento", "OPERADOR", operador(true),
+                "{\"versao\":0,\"agendadaPara\":\"" + data + "\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errosCampos[0].campo").value("agendadaPara"));
+        mvc.perform(get("/api/v1/solicitacoes/" + id).header("X-Ator-Tipo", "MORADOR").header("X-Ator-Id", maria))
+                .andExpect(jsonPath("$.situacao").value("SOLICITADA"))
+                .andExpect(jsonPath("$.versao").value(0))
+                .andExpect(jsonPath("$.historico.length()").value(1));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"recusa", "cancelamento"})
+    void encerramentoExigeMotivoEGravaAutorOperador(String acao) throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        long operador = operador(true);
+        acao(id, acao, "OPERADOR", operador, "{\"versao\":0,\"motivo\":\"  \"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errosCampos[0].campo").value("motivo"));
+        acao(id, acao, "OPERADOR", operador, "{\"versao\":0,\"motivo\":\" Atendimento indisponível \"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.situacao").value(acao.equals("recusa") ? "RECUSADA" : "CANCELADA"))
+                .andExpect(jsonPath("$.versao").value(1))
+                .andExpect(jsonPath("$.historico.length()").value(2))
+                .andExpect(jsonPath("$.historico[1].motivo").value("Atendimento indisponível"))
+                .andExpect(jsonPath("$.historico[1].responsavelId").value(operador));
+    }
+
+    @Test
+    void acoesRespeitamTipoVinculoEPropriedade() throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        String motivo = "{\"versao\":0,\"motivo\":\"Desisti\"}";
+        acao(id, "recusa", "MORADOR", maria, motivo).andExpect(status().isForbidden());
+        acao(id, "recusa", "OPERADOR", operador(false), motivo).andExpect(status().isNotFound());
+        acao(id, "cancelamento", "MORADOR", cadastrarMorador("outra@exemplo.com"), motivo)
+                .andExpect(status().isNotFound());
+        acao(id, "cancelamento", "ADMINISTRADOR", 0, motivo).andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EM_RECOLHIMENTO", "CONCLUIDA", "RECUSADA", "CANCELADA"})
+    void cancelamentoConflitaEmAtendimentoIniciadoOuFinal(String situacao) throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        jdbc.update("UPDATE solicitacao SET situacao = ? WHERE id = ?", situacao, id);
+        entityManager.clear();
+        acao(id, "cancelamento", "MORADOR", maria, "{\"versao\":0,\"motivo\":\"Desisti\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("TRANSICAO_INVALIDA"));
+        assertThat(contar("historico_solicitacao WHERE solicitacao_id = " + id)).isEqualTo(1);
+    }
+
+    @Test
+    void acaoExigeVersaoNaoNegativa() throws Exception {
+        long id = criarSolicitacaoParaAcao();
+        acao(id, "cancelamento", "MORADOR", maria, "{\"motivo\":\"Desisti\"}")
+                .andExpect(status().isBadRequest());
+        acao(id, "cancelamento", "MORADOR", maria, "{\"versao\":-1,\"motivo\":\"Desisti\"}")
+                .andExpect(status().isBadRequest());
+        acao(id, "cancelamento", "MORADOR", maria, "{\"versao\":0.5,\"motivo\":\"Desisti\"}")
+                .andExpect(status().isBadRequest());
+        assertThat(contar("historico_solicitacao WHERE solicitacao_id = " + id)).isEqualTo(1);
+    }
+
+    private long criarSolicitacaoParaAcao() throws Exception {
+        return idDe(criar(maria, corpo(enderecoDaMaria, ponto, item(vidro, "2")))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    private long operador(boolean vinculado) {
+        long id = jdbc.queryForObject("INSERT INTO operador (nome, email) VALUES (?, ?) RETURNING id", Long.class,
+                "Operador de teste", (vinculado ? "vinculado" : "sem.vinculo") + "@exemplo.com");
+        if (vinculado) {
+            jdbc.update("INSERT INTO operador_ponto (operador_id, ponto_id) VALUES (?, ?)", id, ponto);
+        }
+        return id;
+    }
+
+    private ResultActions acao(long id, String acao, String tipo, long ator, String corpo) throws Exception {
+        return mvc.perform(post("/api/v1/solicitacoes/" + id + "/" + acao).header("X-Ator-Tipo", tipo)
+                .header("X-Ator-Id", ator).contentType(MediaType.APPLICATION_JSON).content(corpo));
     }
 
     private ResultActions criar(long morador, String corpo) throws Exception {
