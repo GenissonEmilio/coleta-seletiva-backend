@@ -12,6 +12,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -20,6 +22,7 @@ import br.edu.ifs.web1.coletaseletiva.dto.ponto.PontoResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.ponto.PontoSituacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.exception.EntradaInvalidaException;
 import br.edu.ifs.web1.coletaseletiva.exception.RecursoNaoEncontradoException;
+import br.edu.ifs.web1.coletaseletiva.exception.RegraNegocioException;
 import br.edu.ifs.web1.coletaseletiva.model.PontoModel;
 import br.edu.ifs.web1.coletaseletiva.repository.PontoRepository;
 import br.edu.ifs.web1.coletaseletiva.services.paginacao.PaginacaoService;
@@ -90,6 +93,31 @@ class PontoServiceTest {
 
         assertThat(service.alterarSituacao(1L, new PontoSituacaoRequest(false)).ativo()).isFalse();
         assertThat(service.alterarSituacao(1L, new PontoSituacaoRequest(true)).ativo()).isTrue();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false, true", "true, false"})
+    void pontoInativoOuSemRecolhimentoDomiciliarNaoRecebeSolicitacao(boolean ativo, boolean domiciliar) {
+        PontoModel ponto = ponto(ativo, domiciliar);
+        when(pontoRepository.findById(1L)).thenReturn(Optional.of(ponto));
+
+        assertThatThrownBy(() -> service.buscarDisponivelParaSolicitacao(1L))
+                .isInstanceOf(RegraNegocioException.class);
+    }
+
+    @Test
+    void pontoAtivoComRecolhimentoDomiciliarRecebeSolicitacao() {
+        PontoModel ponto = ponto(true, true);
+        when(pontoRepository.findById(1L)).thenReturn(Optional.of(ponto));
+
+        assertThat(service.buscarDisponivelParaSolicitacao(1L)).isSameAs(ponto);
+    }
+
+    private PontoModel ponto(boolean ativo, boolean domiciliar) {
+        PontoModel ponto = new PontoModel();
+        ponto.setAtivo(ativo);
+        ponto.setRecolhimentoDomiciliar(domiciliar);
+        return ponto;
     }
 
     private PontoRequest request(String numero, boolean semNumero, String uf) {

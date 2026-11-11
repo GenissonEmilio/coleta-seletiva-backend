@@ -93,6 +93,14 @@ Legenda:
 - **Por quê:** o PDF não pede nome único, e uma regra a mais exigiria migração nova ou checagem no Service, o que seria "inventar demais".
 - **Consequência:** pontos homônimos são aceitos. Se a equipe quiser nomes únicos, é preciso uma migração nova (nunca editar `V1` a `V6`) e um `409` no Service.
 
+### 1.11 Verificação de disponibilidade do ponto para solicitação
+- **Tipo:** Necessário (RN01 e critério da issue: "domiciliar desabilitado impede nova solicitação").
+- **O que o PDF diz:** RN01 exige ponto ativo e com recolhimento domiciliar habilitado em toda nova solicitação.
+- **Opções:** (a) `PontoService.buscarDisponivelParaSolicitacao(id)`, que a API-10 chama ao criar a solicitação; (b) deixar a regra para a API-10 escrever sozinha.
+- **Escolhido:** (a). Devolve o `PontoModel` quando o ponto está ativo e com recolhimento domiciliar; senão responde `409 REGRA_NEGOCIO`. Segue o `MaterialService.buscarAtivoParaSolicitacao`.
+- **Por quê:** a regra do ponto fica no módulo do ponto, e a API-10 só chama. Usa um código de erro que já existe, porque o contrato de erros é compartilhado.
+- **Consequência:** nada chama o método até a API-10 existir. O bloqueio da inativação com solicitações abertas (RN05) não foi feito aqui: é da API-14 (#17), que também define a estratégia de locks.
+
 ---
 
 ## 2. Validação
@@ -105,10 +113,10 @@ Legenda:
 3. API: `./mvnw spring-boot:run` com as mesmas variáveis, e chamadas com `curl` em `http://localhost:8080`.
 4. Limpeza: a API foi encerrada e `docker stop coleta-tmp-pg-9` parou o banco. O `--rm` remove o container.
 
-**Resultado:** `./mvnw test` terminou com **102 testes, 0 falhas, 0 erros** e `BUILD SUCCESS`. Desses, 14 são desta issue. Como o contexto subiu com `spring.flyway.enabled=true` e `ddl-auto=validate` num banco vazio, as migrações foram aplicadas e o Hibernate aceitou o `PontoModel` contra `ponto_coleta` (decisão 1.4).
+**Resultado:** `./mvnw test` terminou com **105 testes, 0 falhas, 0 erros** e `BUILD SUCCESS`. Desses, 17 são desta issue. Como o contexto subiu com `spring.flyway.enabled=true` e `ddl-auto=validate` num banco vazio, as migrações foram aplicadas e o Hibernate aceitou o `PontoModel` contra `ponto_coleta` (decisão 1.4).
 
 **Testes desta issue (enxutos, um por regra):**
-- `PontoServiceTest` (6, com Mockito): cadastro com UF em maiúsculas, número sem espaços e ponto ativo; `semNumero` grava número nulo; rejeita número preenchido com `semNumero`; rejeita número vazio sem `semNumero`; buscar ponto inexistente; inativar e reativar.
+- `PontoServiceTest` (9 execuções, com Mockito): cadastro com UF em maiúsculas, número sem espaços e ponto ativo; `semNumero` grava número nulo; rejeita número preenchido com `semNumero`; rejeita número vazio sem `semNumero`; buscar ponto inexistente; inativar e reativar; ponto inativo ou sem recolhimento domiciliar não recebe solicitação (2 casos); ponto ativo com domiciliar recebe.
 - `PontoIntegracaoTest` (8, contra o banco real, com os dados desfeitos ao fim de cada teste): listagem ordenada por nome, com filtro `ativo` e paginação; cadastro persiste e é consultado; ponto sem nome nem endereço é rejeitado (campos `nome`, `logradouro`, `bairro`, `municipio`, `uf` e `cep`); `recolhimentoDomiciliar` ausente é rejeitado; inativar e reativar preserva o ponto; `PUT` altera os dados sem mudar a situação; `PATCH` sem `ativo` é rejeitado sem inativar; `404` no `GET` e no `PATCH` de ponto inexistente.
 
 **Critérios de aceite da issue:**
@@ -118,6 +126,17 @@ Legenda:
 | Ponto sem nome ou endereço é rejeitado | `pontoSemNomeNemEnderecoERejeitado` |
 | Cadastro completo persiste | `cadastroValidoPersisteEPodeSerConsultado` |
 | Ponto é preservado ao inativar | `inativarEReativarPreservaOPonto` |
+| Domiciliar desabilitado (ou ponto inativo) impede nova solicitação | `pontoInativoOuSemRecolhimentoDomiciliarNaoRecebeSolicitacao` (a API-10 chama o método) |
+| Filtragem de ponto inativo | `listaPontosPorNomeComFiltroDeSituacaoEPaginacao` (`?ativo=true`) |
+
+**O que a issue pede e depende de outras issues** (já está escrito nelas, não é preciso criar issue nova):
+
+| Item | Issue que cobre |
+| --- | --- |
+| Consulta pública só com ponto ativo, domiciliar identificado e DTO público (item 4 da #9) | #11 (API-08) |
+| Rejeitar solicitação em ponto indisponível, usando o método da decisão 1.11 | #13 (API-10) |
+| Bloquear a inativação com solicitações abertas (`409`) e tratar a corrida com a criação | #17 (API-14) e #13 |
+| Versão otimista das solicitações | #18 (API-15) |
 
 **Arquivos removidos:** os marcadores de exemplo `TestePontoRequest`, `TestePontoResponse` e `TestePontoService`, substituídos pelas classes reais. Os marcadores dos outros módulos (operador, indicador, solicitação e os compartilhados) não foram tocados.
 
@@ -153,4 +172,4 @@ O OpenAPI (`/v3/api-docs`) lista os caminhos `/api/v1/pontos` (`GET`, `POST`), `
 - Confirmar com a equipe (Herbert) a inclusão do `GET /pontos` (decisão 1.2) e, se confirmada, atualizar `CONTRATO_API.md` com o novo caminho.
 - Revisão do Herbert sobre a decisão 1.3 (DTO público só na API-08).
 - As decisões 1.7 (`recolhimentoDomiciliar` obrigatório) e 1.8 (ponto nasce ativo, `PATCH` com `{"ativo": ...}`) estavam aqui como "assumidas" e passaram a decisões porque o código e os testes que as aplicam foram aprovados. A 1.10 (nome sem unicidade) foi confirmada pelo autor.
-- Integração com a API-14 (bloquear inativação de ponto com solicitações abertas, RN05) e com a API-10 (impedir nova solicitação em ponto inativo ou sem recolhimento domiciliar).
+- Integração com a API-14 (bloquear inativação de ponto com solicitações abertas, RN05, com estratégia de locks), com a API-10 (chamar `buscarDisponivelParaSolicitacao`) e com a API-08 (consulta pública e DTO público). Ver a tabela de critérios na seção 2.

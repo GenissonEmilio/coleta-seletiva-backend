@@ -12,8 +12,10 @@ import br.edu.ifs.web1.coletaseletiva.dto.common.PaginacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.ponto.PontoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.ponto.PontoResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.ponto.PontoSituacaoRequest;
+import br.edu.ifs.web1.coletaseletiva.exception.CodigoErro;
 import br.edu.ifs.web1.coletaseletiva.exception.EntradaInvalidaException;
 import br.edu.ifs.web1.coletaseletiva.exception.RecursoNaoEncontradoException;
+import br.edu.ifs.web1.coletaseletiva.exception.RegraNegocioException;
 import br.edu.ifs.web1.coletaseletiva.model.PontoModel;
 import br.edu.ifs.web1.coletaseletiva.repository.PontoRepository;
 import br.edu.ifs.web1.coletaseletiva.services.paginacao.PaginacaoService;
@@ -47,6 +49,17 @@ public class PontoService {
     @Transactional(readOnly = true)
     public PontoResponse buscar(Long id) {
         return converter(buscarModel(id));
+    }
+
+    /** A API-10 deve chamar este método dentro da transação que cria/corrige a solicitação. */
+    @Transactional(readOnly = true)
+    public PontoModel buscarDisponivelParaSolicitacao(Long id) {
+        PontoModel ponto = buscarModel(id);
+        if (!ponto.isAtivo() || !ponto.isRecolhimentoDomiciliar()) {
+            throw new RegraNegocioException(CodigoErro.REGRA_NEGOCIO,
+                    "Ponto inativo ou sem recolhimento domiciliar não recebe nova solicitação.");
+        }
+        return ponto;
     }
 
     @Transactional
