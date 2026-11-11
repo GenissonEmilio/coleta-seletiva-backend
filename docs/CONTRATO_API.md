@@ -37,6 +37,7 @@ Todo erro tem o mesmo formato, e `errosCampos` é sempre uma lista (vazia quando
 | `ROTA_NAO_ENCONTRADA` | 404 | Caminho que não existe |
 | `METODO_NAO_PERMITIDO` | 405 | Verbo HTTP não aceito no caminho |
 | `TIPO_NAO_SUPORTADO` | 415 | Corpo que não é `application/json` |
+| `ACESSO_NEGADO` | 403 | Ator de demonstração ausente, desconhecido, inativo ou sem permissão para a operação |
 | `DUPLICIDADE` | 409 | E-mail, nome de material ou vínculo já existente |
 | `CONFLITO_VERSAO` | 409 | `versao` desatualizada ou escrita concorrente |
 | `TRANSICAO_INVALIDA` | 409 | Mudança de situação não permitida |
@@ -284,6 +285,46 @@ Todos os caminhos usam o prefixo `/api/v1`. Só leitura, sem dados de moradores 
 - Ordem por nome do ponto, com `id` como desempate. Um ponto com vários materiais aparece uma vez só (filtro por `EXISTS`, sem `JOIN`).
 - `recolhimentoDomiciliar: false` identifica o ponto que não faz coleta em casa; a criação da solicitação continua barrando esse ponto (`PontoService.buscarDisponivelParaSolicitacao`).
 - O detalhe traz os materiais ativos aceitos (mesmo formato de `GET /pontos/{id}/materiais`), ordenados por nome, sem paginação.
+
+## Operadores e contexto de demonstração (API-09)
+
+Todos os caminhos usam o prefixo `/api/v1`. Decisões em [docs/documentos-issues/issue-api-09](documentos-issues/issue-api-09/Registro_de_decisoes.md).
+
+**Seleção de ator (simulação, não autenticação).** O cliente informa o ator fictício em dois cabeçalhos:
+
+| Cabeçalho | Valor |
+| --- | --- |
+| `X-Ator-Tipo` | `MORADOR`, `OPERADOR` ou `ADMINISTRADOR` (sem diferenciar maiúsculas) |
+| `X-Ator-Id` | id do morador ou do operador; dispensado para `ADMINISTRADOR` |
+
+O backend confere no banco se o ator existe e está ativo e carrega os pontos do operador. Ator ausente, de tipo inválido, inexistente ou inativo responde `403 ACESSO_NEGADO`. **Qualquer cliente pode enviar qualquer id: o id não prova identidade.** Não usar em produção; se houver login, a identidade passa a vir da autenticação.
+
+| Operação | Quem pode | Sucesso | Erros possíveis |
+| --- | --- | --- | --- |
+| `GET /contexto` | qualquer ator válido | `200`, `ContextoResponse` (tipo, id, nome, pontoIds) | `403` |
+| `POST /operadores` | administrador | `201` com `Location` | `400`, `403`, `409 DUPLICIDADE` |
+| `GET /operadores?page=&size=` | administrador | `200`, `PaginaResponse<OperadorResponse>` | `400`, `403` |
+| `GET /operadores/{id}` | administrador ou o próprio operador | `200`, com a lista `pontos` | `403`, `404` |
+| `PUT /operadores/{id}` | administrador | `200` | `400`, `403`, `404`, `409 DUPLICIDADE` |
+| `PUT /operadores/{id}/pontos/{pontoId}` | administrador | `201` ao criar, `200` se já existia | `403`, `404` |
+| `DELETE /operadores/{id}/pontos/{pontoId}` | administrador | `204` | `403`, `404` |
+| `GET /demo/atores` | só existe no perfil `demo` | `200`, lista de `ContextoResponse` | `404` fora do perfil |
+
+- `nome` e `email` obrigatórios; o e-mail é normalizado (minúsculo, sem espaços) e único entre operadores.
+- Repetir o vínculo nunca cria segunda linha. Operadores não são excluídos.
+- As demais rotas (moradores, materiais, pontos, consulta pública) ainda não exigem os cabeçalhos. As issues de solicitação usam `ContextoService.exigirOperadorDoPonto` e `exigirMoradorDono` para limitar o escopo.
+
+**Exemplo: operador do ponto A consultando outro operador**
+
+```http
+GET /api/v1/operadores/9
+X-Ator-Tipo: OPERADOR
+X-Ator-Id: 8
+
+403 Forbidden
+
+{"codigo": "ACESSO_NEGADO", "mensagem": "Operador só pode consultar os próprios dados.", "errosCampos": []}
+```
 
 ## Criação e correção de solicitação
 
