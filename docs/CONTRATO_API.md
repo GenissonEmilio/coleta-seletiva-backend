@@ -106,6 +106,67 @@ Listagens administrativas adicionais necessárias ao uso das telas devem seguir 
 | Item | material, cópia da unidade, estimada positiva, efetiva não negativa quando informada; único por material na solicitação |
 | Histórico | situação anterior/nova, evento, instante, responsável, motivo e dados da tentativa; valores opcionais apenas quando o evento não os exigir |
 
+## Materiais, unidades e inativação (API-05)
+
+Todos os caminhos abaixo usam o prefixo `/api/v1`. O catálogo administrativo inclui materiais inativos, para permitir sua manutenção e a consulta dos registros anteriores.
+
+| Operação | Sucesso | Erros possíveis |
+| --- | --- | --- |
+| `POST /materiais` | `201` com `Location` e `MaterialResponse` | `400`, `409 DUPLICIDADE` |
+| `GET /materiais?ativo=&page=&size=` | `200`, `PaginaResponse<MaterialResponse>` | `400` |
+| `GET /materiais/{id}` | `200`, inclusive se inativo | `400`, `404` |
+| `PUT /materiais/{id}` | `200`, sem alterar `ativo` | `400`, `404`, `409 DUPLICIDADE` |
+| `PATCH /materiais/{id}/situacao` | `200`, representação atualizada | `400`, `404` |
+
+- `MaterialRequest`: `nome` obrigatório (até 80 caracteres), `unidade` obrigatória, `descricao` e `orientacaoPreparo` opcionais. A criação começa com `ativo: true`.
+- O nome é aparado nas pontas, preservando a apresentação. A unicidade ignora caixa e espaços nas pontas: `Papel` e `" PAPEL "` conflitam, mesmo se o material existente estiver inativo. A regra também está no banco, pela migração V7. Acentos e espaços internos continuam significativos.
+- Unidades aceitas: `KG` (peso decimal), `LITRO` (volume decimal) e `UNIDADE` (peças inteiras). Outros valores, inclusive `kg`, respondem `400 ENTRADA_INVALIDA`.
+- Sem `ativo`, a listagem inclui ambos os estados. `ativo=true` ou `ativo=false` filtra no banco antes da paginação. Ordem por nome, ignorando caixa, e ID como desempate; `page`/`size` seguem o envelope comum.
+- A situação recebe `MaterialSituacaoRequest`: `{"ativo": false}` inativa e `{"ativo": true}` reativa. O campo é obrigatório; ausente ou nulo responde `400` apontando `ativo`. Repetir a mesma situação é idempotente.
+- A inativação preserva o material, os vínculos e os itens existentes. Não há endpoint `DELETE` de material. Um `PUT` de dados não reativa o material; a troca de unidade não reescreve a unidade copiada em itens anteriores.
+
+Exemplo de cadastro, com dados fictícios:
+
+```http
+POST /api/v1/materiais
+Content-Type: application/json
+
+{"nome":"Papel","descricao":"Papel e papelão secos","unidade":"KG","orientacaoPreparo":"Separar limpo e seco"}
+```
+
+```http
+201 Created
+Location: http://localhost:8080/api/v1/materiais/1
+
+{"id":1,"nome":"Papel","descricao":"Papel e papelão secos","unidade":"KG","orientacaoPreparo":"Separar limpo e seco","ativo":true}
+```
+
+Exemplo de inativação:
+
+```http
+PATCH /api/v1/materiais/1/situacao
+Content-Type: application/json
+
+{"ativo":false}
+```
+
+A resposta é `200`, com os mesmos campos do material e `ativo: false`. Ele continua acessível no detalhe e na listagem administrativa. Um nome repetido responde:
+
+```http
+409 Conflict
+
+{"codigo":"DUPLICIDADE","mensagem":"Já existe um material com este nome.","errosCampos":[]}
+```
+
+### Integração com as próximas funcionalidades
+
+- A API-10 deve chamar `MaterialService.buscarAtivoParaSolicitacao(id)` dentro da transação de criação/correção. Inexistente responde `404`; inativo, `409 MATERIAL_INCOMPATIVEL`. O método devolve o Model para o uso interno do serviço, e não para serialização HTTP. O item deve receber uma **cópia** da unidade naquele momento.
+- `QuantidadeMaterialService.validarPositiva(valor, unidade, campo)` atende estimativas e limites informados; `validarNaoNegativa` atende efetivos. Usar `BigDecimal`, aceitando no máximo 9 dígitos inteiros e 3 casas decimais significativas, sem arredondar; `UNIDADE` rejeita frações. `2.000` é inteiro. O parâmetro `campo` permite apontar, por exemplo, `itens[0].quantidadeEstimada`.
+- A API-07 deve pular a validação de limite quando ele for ausente. A API-13 deve usar a unidade **copiada no item**, e validar também que ao menos um efetivo seja positivo ao concluir. As validações de ponto/material aceito, limite e transação única pertencem aos serviços dessas operações.
+- Os serviços de solicitação ainda serão implementados na API-10/API-13; estes métodos são o contrato de integração da API-05. A consulta pública apenas de materiais disponíveis pertence à API-08.
+
+Decisões e validação: [registro da API-05](documentos-issues/issue-api-05/Registro_de_decisoes.md).
+
 ## Moradores e endereços (API-04)
 
 Todos os caminhos usam o prefixo `/api/v1`. Dados dos exemplos são fictícios. Decisões completas em [docs/documentos-issues/issue-api-04](documentos-issues/issue-api-04/Registro_de_decisoes.md).
