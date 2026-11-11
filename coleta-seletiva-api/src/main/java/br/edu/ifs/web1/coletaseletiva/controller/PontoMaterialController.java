@@ -54,7 +54,8 @@ public class PontoMaterialController {
 
     @DeleteMapping("/{materialId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Remove o vínculo entre o ponto e o material")
+    @Operation(summary = "Remove o vínculo entre o ponto e o material",
+            description = "Retorna 409 se uma solicitação aberta do ponto contiver o material")
     public void remover(@PathVariable Long pontoId, @PathVariable Long materialId) {
         pontoMaterialService.remover(pontoId, materialId);
     }

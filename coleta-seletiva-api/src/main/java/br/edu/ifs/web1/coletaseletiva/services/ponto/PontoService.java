@@ -1,6 +1,7 @@
 package br.edu.ifs.web1.coletaseletiva.services.ponto;
 
 import java.util.Locale;
+import java.util.Set;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -17,17 +18,25 @@ import br.edu.ifs.web1.coletaseletiva.exception.EntradaInvalidaException;
 import br.edu.ifs.web1.coletaseletiva.exception.RecursoNaoEncontradoException;
 import br.edu.ifs.web1.coletaseletiva.exception.RegraNegocioException;
 import br.edu.ifs.web1.coletaseletiva.model.PontoModel;
+import br.edu.ifs.web1.coletaseletiva.model.SituacaoSolicitacao;
 import br.edu.ifs.web1.coletaseletiva.repository.PontoRepository;
+import br.edu.ifs.web1.coletaseletiva.repository.SolicitacaoRepository;
 import br.edu.ifs.web1.coletaseletiva.services.paginacao.PaginacaoService;
 
 @Service
 public class PontoService {
 
+    private static final Set<SituacaoSolicitacao> ABERTAS = Set.of(SituacaoSolicitacao.SOLICITADA,
+            SituacaoSolicitacao.AGENDADA, SituacaoSolicitacao.EM_RECOLHIMENTO);
+
     private final PontoRepository pontoRepository;
+    private final SolicitacaoRepository solicitacaoRepository;
     private final PaginacaoService paginacaoService;
 
-    public PontoService(PontoRepository pontoRepository, PaginacaoService paginacaoService) {
+    public PontoService(PontoRepository pontoRepository, SolicitacaoRepository solicitacaoRepository,
+            PaginacaoService paginacaoService) {
         this.pontoRepository = pontoRepository;
+        this.solicitacaoRepository = solicitacaoRepository;
         this.paginacaoService = paginacaoService;
     }
 
@@ -65,16 +74,34 @@ public class PontoService {
     @Transactional
     public PontoResponse atualizar(Long id, PontoRequest request) {
         validarNumero(request);
-        PontoModel ponto = buscarModel(id);
+        PontoModel ponto = travarParaAlteracao(id);
         preencher(ponto, request);
         return converter(pontoRepository.save(ponto));
     }
 
     @Transactional
     public PontoResponse alterarSituacao(Long id, PontoSituacaoRequest request) {
-        PontoModel ponto = buscarModel(id);
+        PontoModel ponto = travarParaAlteracao(id);
+        if (ponto.isAtivo() && !request.ativo()) {
+            exigirSemSolicitacoesAbertas(id, null);
+        }
         ponto.setAtivo(request.ativo());
         return converter(pontoRepository.save(ponto));
+    }
+
+    /** Chamar na transação que altera o ponto ou um de seus vínculos. */
+    public PontoModel travarParaAlteracao(Long id) {
+        return pontoRepository.travarParaAlteracao(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Ponto", id));
+    }
+
+    /** Verifica a RN05 depois de obter a trava do ponto. Material nulo abrange todo o ponto. */
+    public void exigirSemSolicitacoesAbertas(Long pontoId, Long materialId) {
+        long quantidade = solicitacaoRepository.contarAbertasAfetadas(pontoId, materialId, ABERTAS);
+        if (quantidade > 0) {
+            throw new RegraNegocioException(CodigoErro.PONTO_COM_SOLICITACOES_ABERTAS,
+                    "Solicitações abertas afetadas por esta alteração: " + quantidade + ".");
+        }
     }
 
     private PontoModel buscarModel(Long id) {

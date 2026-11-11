@@ -79,7 +79,7 @@ Essa organização segue o [guia da equipe](GUIA_IMPLEMENTACAO.md#4-organizaçã
 
 | Área | Operações propostas | Tarefa |
 | --- | --- | --- |
-| Moradores | `POST /moradores`, `GET /moradores/{id}`, `PUT /moradores/{id}` e inativação preservando referências | API-04, API-14 |
+| Moradores | `POST /moradores`, `GET /moradores/{id}`, `PUT /moradores/{id}`, `PATCH /moradores/{id}/situacao` | API-04, API-14 |
 | Endereços | `POST /moradores/{id}/enderecos`, `GET /moradores/{id}/enderecos`, `PUT /moradores/{id}/enderecos/{enderecoId}` | API-04 |
 | Materiais | `POST /materiais`, `GET /materiais`, `GET /materiais/{id}`, `PUT /materiais/{id}`, `PATCH /materiais/{id}/situacao` | API-05 |
 | Pontos | `POST /pontos`, `GET /pontos/{id}`, `PUT /pontos/{id}`, `PATCH /pontos/{id}/situacao` | API-06, API-14 |
@@ -184,7 +184,7 @@ Todos os caminhos usam o prefixo `/api/v1`. Dados dos exemplos são fictícios. 
 **Regras do morador**
 - `nome` e `email` são obrigatórios. `telefone` é opcional (até 20 caracteres).
 - O e-mail é normalizado (minúsculo, sem espaços nas pontas) **antes** da validação e da checagem de unicidade. `"  MARIA@Exemplo.com "` e `maria@exemplo.com` são o mesmo e-mail e geram `409 DUPLICIDADE`. A unicidade também existe no banco.
-- Moradores não são excluídos. A inativação é da API-14.
+- A API-14 altera a situação do morador preservando seus registros.
 
 **Regras do endereço**
 - Obrigatórios: `logradouro`, `bairro`, `municipio`, `uf` (2 letras, gravada em maiúsculas) e `cep` (8 dígitos, sem traço). Opcional: `complemento`.
@@ -270,6 +270,14 @@ Location: http://localhost:8080/api/v1/moradores/1/enderecos/1
               "complemento": "Apto 2", "ativo": true}],
  "page": 0, "size": 1, "totalElements": 2, "totalPages": 2}
 ```
+
+## Proteção de cadastros e vínculos (API-14)
+
+`PATCH /api/v1/moradores/{id}/situacao` recebe `{"ativo":false}` para inativar e `{"ativo":true}` para reativar. O campo é obrigatório. O retorno é `200` com o morador atualizado. O contexto de demonstração rejeita moradores inativos em novas operações.
+
+`PATCH /api/v1/pontos/{id}/situacao` bloqueia a inativação se o ponto tiver solicitações abertas. `DELETE /api/v1/pontos/{id}/materiais/{materialId}` bloqueia a remoção se uma solicitação aberta do ponto contiver aquele material. Estados abertos são `SOLICITADA`, `AGENDADA` e `EM_RECOLHIMENTO`. O bloqueio devolve `409 PONTO_COM_SOLICITACOES_ABERTAS` com o número de solicitações afetadas.
+
+Estados finais deixam de bloquear a alteração. As chaves estrangeiras protegem os cadastros vinculados e os itens mantêm a unidade copiada. Endereço copiado e histórico continuam consultáveis. Criação e correção seguram uma trava compartilhada no ponto. Inativação e remoção usam a trava exclusiva na mesma linha antes de contar as solicitações afetadas.
 
 ## Consulta pública (API-08)
 

@@ -25,6 +25,7 @@ import br.edu.ifs.web1.coletaseletiva.exception.RecursoNaoEncontradoException;
 import br.edu.ifs.web1.coletaseletiva.exception.RegraNegocioException;
 import br.edu.ifs.web1.coletaseletiva.model.PontoModel;
 import br.edu.ifs.web1.coletaseletiva.repository.PontoRepository;
+import br.edu.ifs.web1.coletaseletiva.repository.SolicitacaoRepository;
 import br.edu.ifs.web1.coletaseletiva.services.paginacao.PaginacaoService;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,13 +35,16 @@ class PontoServiceTest {
     private PontoRepository pontoRepository;
 
     @Mock
+    private SolicitacaoRepository solicitacaoRepository;
+
+    @Mock
     private PaginacaoService paginacaoService;
 
     private PontoService service;
 
     @BeforeEach
     void criarService() {
-        service = new PontoService(pontoRepository, paginacaoService);
+        service = new PontoService(pontoRepository, solicitacaoRepository, paginacaoService);
     }
 
     @Test
@@ -88,7 +92,7 @@ class PontoServiceTest {
     @Test
     void alterarSituacaoInativaEReativa() {
         PontoModel ponto = new PontoModel();
-        when(pontoRepository.findById(1L)).thenReturn(Optional.of(ponto));
+        when(pontoRepository.travarParaAlteracao(1L)).thenReturn(Optional.of(ponto));
         when(pontoRepository.save(ponto)).thenReturn(ponto);
 
         assertThat(service.alterarSituacao(1L, new PontoSituacaoRequest(false)).ativo()).isFalse();
