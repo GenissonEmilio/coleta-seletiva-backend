@@ -460,6 +460,18 @@ Todas as mutações de solicitação, inclusive correção e reagendamento, rece
 
 Histórico e mudança devem confirmar juntos. CONCLUIDA, RECUSADA e CANCELADA são finais. Enum JSON sem acento é proposta; no PDF aparece “CONCLUÍDA”.
 
+### Agendamento, recusa e cancelamento (API-12)
+
+As três ações usam `POST /api/v1/solicitacoes/{id}/<ação>`, recebem a versão inteira não negativa da última resposta e devolvem `200` com a solicitação atualizada, a nova versão e o histórico.
+
+| Ação | Ator | Exemplo de corpo |
+| --- | --- | --- |
+| `agendamento` | Operador vinculado ao ponto | `{"versao":0,"agendadaPara":"2026-12-01T14:30:00-03:00"}` |
+| `recusa` | Operador vinculado ao ponto | `{"versao":0,"motivo":"Sem equipe disponível"}` |
+| `cancelamento` | Morador dono ou operador vinculado ao ponto | `{"versao":1,"motivo":"Solicitação duplicada"}` |
+
+A data de agendamento deve ter offset e representar um instante posterior ao atual. O histórico guarda o novo agendamento em `agendamentoNovo`. A recusa e o cancelamento exigem motivo com texto. Campos inválidos retornam `400`, tipo de ator sem permissão retorna `403` e solicitação inexistente ou fora do contexto retorna `404`. A versão antiga retorna `409 CONFLITO_VERSAO` e a transição proibida retorna `409 TRANSICAO_INVALIDA`.
+
 ## Contexto e privacidade
 
 No protótipo sem login, documentar a seleção de ator fictício em perfil local. O backend resolve tipo de ator e vínculos; contexto deve limitar consultas do morador às próprias solicitações e do operador aos próprios pontos. Seleção livre de ator continua sendo simulação, não autenticação ou proteção para produção.

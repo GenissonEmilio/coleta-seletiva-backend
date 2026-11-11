@@ -21,7 +21,9 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import br.edu.ifs.web1.coletaseletiva.dto.common.PaginaResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.common.PaginacaoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoAgendamentoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoCorrecaoRequest;
+import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoEncerramentoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoRequest;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResponse;
 import br.edu.ifs.web1.coletaseletiva.dto.solicitacao.SolicitacaoResumoResponse;
@@ -35,7 +37,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/v1/solicitacoes")
-@Tag(name = "Solicitações", description = "Criação e correção pelo morador; consultas pelo contexto do ator "
+@Tag(name = "Solicitações", description = "Criação, correção, consultas e ações pelo contexto do ator "
         + "(X-Ator-Tipo e X-Ator-Id). Simulação de demonstração, não é autenticação")
 public class SolicitacaoController {
 
@@ -71,6 +73,33 @@ public class SolicitacaoController {
             @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
             @PathVariable Long id, @Valid @RequestBody SolicitacaoCorrecaoRequest request) {
         return solicitacaoService.corrigir(resolverMorador(atorTipo, atorId), id, request);
+    }
+
+    @PostMapping("/{id}/agendamento")
+    @Operation(summary = "Agenda uma solicitação do ponto do operador para uma data futura")
+    public SolicitacaoResponse agendar(
+            @RequestHeader(name = ContextoService.CABECALHO_TIPO, required = false) String atorTipo,
+            @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
+            @PathVariable Long id, @Valid @RequestBody SolicitacaoAgendamentoRequest request) {
+        return solicitacaoService.agendar(contextoService.resolver(atorTipo, atorId), id, request);
+    }
+
+    @PostMapping("/{id}/recusa")
+    @Operation(summary = "Recusa uma solicitação do ponto do operador com motivo")
+    public SolicitacaoResponse recusar(
+            @RequestHeader(name = ContextoService.CABECALHO_TIPO, required = false) String atorTipo,
+            @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
+            @PathVariable Long id, @Valid @RequestBody SolicitacaoEncerramentoRequest request) {
+        return solicitacaoService.recusar(contextoService.resolver(atorTipo, atorId), id, request);
+    }
+
+    @PostMapping("/{id}/cancelamento")
+    @Operation(summary = "Cancela com motivo pelo morador dono ou pelo operador do ponto")
+    public SolicitacaoResponse cancelar(
+            @RequestHeader(name = ContextoService.CABECALHO_TIPO, required = false) String atorTipo,
+            @RequestHeader(name = ContextoService.CABECALHO_ID, required = false) Long atorId,
+            @PathVariable Long id, @Valid @RequestBody SolicitacaoEncerramentoRequest request) {
+        return solicitacaoService.cancelar(contextoService.resolver(atorTipo, atorId), id, request);
     }
 
     @GetMapping
