@@ -16,7 +16,9 @@ public record SolicitacaoResponse(
         @Schema(example = "CS-20261111-K7P3QX") String protocolo,
         @Schema(example = "SOLICITADA") SituacaoSolicitacao situacao,
         @Schema(description = "Enviar de volta nas alterações", example = "0") Long versao,
-        @Schema(example = "2026-11-11T14:30:00-03:00") OffsetDateTime criadaEm,
+        @Schema(example = "2026-11-11T17:30:00Z") OffsetDateTime criadaEm,
+        @Schema(description = "Nulo até o agendamento", example = "2026-11-15T12:00:00Z") OffsetDateTime agendadaPara,
+        @Schema(description = "Nulo até a conclusão") OffsetDateTime concluidaEm,
         @Schema(example = "1") Long moradorId,
         @Schema(example = "1") Long pontoId,
         EnderecoCopiado endereco,
@@ -50,9 +52,10 @@ public record SolicitacaoResponse(
     public record Historico(
             @Schema(description = "Nulo na criação") SituacaoSolicitacao situacaoAnterior,
             @Schema(example = "SOLICITADA") SituacaoSolicitacao situacaoNova,
-            @Schema(example = "2026-11-11T14:30:00-03:00") OffsetDateTime ocorridoEm,
+            @Schema(example = "2026-11-11T17:30:00Z") OffsetDateTime ocorridoEm,
             @Schema(example = "MORADOR") ResponsavelTipo responsavelTipo,
             @Schema(example = "1") Long responsavelId,
-            @Schema(description = "Na correção, guarda o endereço e os itens anteriores") String motivo) {
+            @Schema(description = "Na correção, guarda o endereço e os itens anteriores") String motivo,
+            @Schema(description = "Nova data, quando a alteração agenda ou reagenda") OffsetDateTime agendamentoNovo) {
     }
 }
