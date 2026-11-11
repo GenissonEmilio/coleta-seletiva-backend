@@ -28,6 +28,11 @@ public class PaginacaoService {
      * A ordem é definida pelo módulo e recebe o id como desempate.
      */
     public Pageable criarPageable(PaginacaoRequest entrada, Sort ordem) {
+        return criarPageable(entrada).withSort(comDesempate(ordem));
+    }
+
+    /** Para consultas que já têm ordenação estável definida no repositório. */
+    public PageRequest criarPageable(PaginacaoRequest entrada) {
         int page = entrada.page();
         int size = entrada.size();
         List<ErroCampoResponse> erros = new ArrayList<>();
@@ -40,7 +45,7 @@ public class PaginacaoService {
         if (!erros.isEmpty()) {
             throw new EntradaInvalidaException(erros);
         }
-        return PageRequest.of(page, size, comDesempate(ordem));
+        return PageRequest.of(page, size);
     }
 
     private static Sort comDesempate(Sort ordem) {

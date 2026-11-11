@@ -89,7 +89,7 @@ Essa organização segue o [guia da equipe](GUIA_IMPLEMENTACAO.md#4-organizaçã
 | Solicitações | `POST /solicitacoes`, `GET /solicitacoes`, `GET /solicitacoes/{id}`, `GET /solicitacoes/{id}/historico`, `PUT /solicitacoes/{id}/dados` | API-10, API-11 |
 | Agendamento e encerramentos | `POST /solicitacoes/{id}/agendamento`, `/recusa`, `/cancelamento` | API-12 |
 | Execução | `POST /solicitacoes/{id}/inicio`, `/conclusao`, `/reagendamento`, `/tentativa-sem-sucesso` | API-13 |
-| Resumo | `GET /indicadores/solicitacoes?inicio=&fim=`, `GET /indicadores/recolhimentos?inicio=&fim=` | API-16 |
+| Resumo | `GET /indicadores/solicitacoes?inicio=&fim=`, `GET /indicadores/recolhimentos?inicio=&fim=&page=&size=` | API-16 |
 
 Listagens administrativas adicionais necessárias ao uso das telas devem seguir as mesmas regras de paginação e privacidade. Propostas vindas da revisão das telas (PLAN-03), ainda a confirmar com a equipe: `GET /pontos` (listagem administrativa, inclui inativos), `GET /operadores`, filtro `domiciliar=true` em `GET /publico/pontos`, e um endpoint de atores de demonstração para o contexto local. Os caminhos abreviados da linha de ações mantêm o prefixo `/solicitacoes/{id}`. No vínculo via PUT, devolver 201 ao criar e 200/204 ao atualizar; repetição não gera uma segunda linha. A equipe deve documentar a política de duplicidade compatível com RF05.
 
@@ -487,3 +487,32 @@ A data de agendamento deve ter offset e representar um instante posterior ao atu
 No protótipo sem login, documentar a seleção de ator fictício em perfil local. O backend resolve tipo de ator e vínculos; contexto deve limitar consultas do morador às próprias solicitações e do operador aos próprios pontos. Seleção livre de ator continua sendo simulação, não autenticação ou proteção para produção.
 
 Os endpoints públicos expõem pontos/materiais e orientações, sem nomes de moradores, endereços de atendimento, e-mails de moradores/operadores ou histórico pessoal. Dados de contato do ponto fazem parte da consulta do ponto. Se login for adotado futuramente, autenticar e autorizar de verdade cada operação restrita e testar cruzamento de pontos/usuários.
+
+## Indicadores gerenciais (API-16)
+
+Envie `X-Ator-Tipo: ADMINISTRADOR` no contexto de demonstração. Os dois endpoints aceitam `inicio` inclusivo e `fim` exclusivo em ISO 8601 com offset. Cada limite é opcional e pode ser usado sozinho. Se ambos forem enviados, `fim` deve ser posterior a `inicio`. Período ou paginação inválidos retornam `400 ENTRADA_INVALIDA`. Contexto ausente ou sem permissão retorna `403 ACESSO_NEGADO`.
+
+| Endpoint | Data do filtro | Resposta |
+| --- | --- | --- |
+| `GET /api/v1/indicadores/solicitacoes` | `criadaEm` | Seis linhas com `situacao` atual e `total`. Estados sem solicitações têm total zero. |
+| `GET /api/v1/indicadores/recolhimentos` | `concluidaEm` | `PaginaResponse` de grupos por material e unidade copiada, ordenados pelo nome, ID e unidade. `totalElements` conta os grupos. |
+
+O recolhimento soma os efetivos preenchidos em solicitações `CONCLUIDA` com data de conclusão. Um zero registrado participa do seu grupo. A resposta identifica o material pelo ID e pelo nome cadastrado e usa a unidade preservada no item. Assim, o mesmo material pode aparecer em linhas distintas para KG e LITRO. Os resultados trazem dados agregados. Um intervalo sem recolhimentos devolve `content: []` e `totalElements: 0`.
+
+```http
+GET /api/v1/indicadores/recolhimentos?inicio=2026-11-01T03:00:00Z&fim=2026-12-01T03:00:00Z&page=0&size=20
+X-Ator-Tipo: ADMINISTRADOR
+```
+
+```json
+{
+  "content": [
+    {"materialId": 1, "nomeMaterial": "Vidro", "unidade": "KG", "quantidadeEfetiva": 5.75},
+    {"materialId": 1, "nomeMaterial": "Vidro", "unidade": "LITRO", "quantidadeEfetiva": 1.125}
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 2,
+  "totalPages": 1
+}
+```
