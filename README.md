@@ -83,6 +83,18 @@ pressione `Ctrl+C`.
 
 No Windows, substitua `./mvnw` por `.\mvnw.cmd`, mantendo os argumentos.
 
+### Perfil local de demonstração (atores fictícios)
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=demo
+```
+
+Com o perfil `demo`, a API cria uma vez um morador, dois pontos e dois operadores
+fictícios e habilita `GET /api/v1/demo/atores`, que lista os atores e seus ids.
+Para agir como um deles, envie os cabeçalhos `X-Ator-Tipo` e `X-Ator-Id`.
+Isso é simulação, não autenticação: use só em ambiente local. Detalhes em
+[Contexto de demonstração](docs/CONTRATO_API.md#operadores-e-contexto-de-demonstração-api-09).
+
 ## Verificação antes do PR
 
 - [ ] Maven Wrapper executado com Java 21.
