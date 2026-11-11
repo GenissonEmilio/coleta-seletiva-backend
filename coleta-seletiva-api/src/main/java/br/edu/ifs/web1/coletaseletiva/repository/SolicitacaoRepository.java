@@ -2,6 +2,7 @@ package br.edu.ifs.web1.coletaseletiva.repository;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -12,10 +13,21 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import br.edu.ifs.web1.coletaseletiva.dto.indicador.RecolhimentoPorMaterialResponse;
+import br.edu.ifs.web1.coletaseletiva.dto.indicador.SolicitacoesPorSituacaoResponse;
 import br.edu.ifs.web1.coletaseletiva.model.SituacaoSolicitacao;
 import br.edu.ifs.web1.coletaseletiva.model.SolicitacaoModel;
 
 public interface SolicitacaoRepository extends JpaRepository<SolicitacaoModel, Long> {
+
+    String ITENS_RECOLHIDOS_NO_PERIODO = """
+            from ItemSolicitacaoModel i join i.solicitacao s join i.material m
+            where s.situacao = br.edu.ifs.web1.coletaseletiva.model.SituacaoSolicitacao.CONCLUIDA
+            and s.concluidaEm is not null
+            and i.quantidadeEfetiva is not null
+            and (cast(:inicio as OffsetDateTime) is null or s.concluidaEm >= :inicio)
+            and (cast(:fim as OffsetDateTime) is null or s.concluidaEm < :fim)
+            """;
 
     boolean existsByProtocolo(String protocolo);
 
@@ -53,4 +65,25 @@ public interface SolicitacaoRepository extends JpaRepository<SolicitacaoModel, L
             """)
     long contarAbertasAfetadas(@Param("pontoId") Long pontoId, @Param("materialId") Long materialId,
             @Param("situacoes") Collection<SituacaoSolicitacao> situacoes);
+
+    @Query("""
+            select new br.edu.ifs.web1.coletaseletiva.dto.indicador.SolicitacoesPorSituacaoResponse(s.situacao, count(s))
+            from SolicitacaoModel s
+            where (cast(:inicio as OffsetDateTime) is null or s.criadaEm >= :inicio)
+            and (cast(:fim as OffsetDateTime) is null or s.criadaEm < :fim)
+            group by s.situacao
+            """)
+    List<SolicitacoesPorSituacaoResponse> contarPorSituacao(
+            @Param("inicio") OffsetDateTime inicio, @Param("fim") OffsetDateTime fim);
+
+    @Query(value = """
+            select new br.edu.ifs.web1.coletaseletiva.dto.indicador.RecolhimentoPorMaterialResponse(
+                m.id, m.nome, i.unidade, sum(i.quantidadeEfetiva))
+            """ + ITENS_RECOLHIDOS_NO_PERIODO + """
+            group by m.id, m.nome, i.unidade
+            order by lower(m.nome), m.id, i.unidade
+            """,
+            countQuery = "select count(distinct (m.id, i.unidade)) " + ITENS_RECOLHIDOS_NO_PERIODO)
+    Page<RecolhimentoPorMaterialResponse> somarRecolhimentos(
+            @Param("inicio") OffsetDateTime inicio, @Param("fim") OffsetDateTime fim, Pageable pageable);
 }

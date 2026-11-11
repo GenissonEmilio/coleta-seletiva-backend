@@ -283,6 +283,8 @@ RNF04 pede índices coerentes com os filtros do RF06 e do RF09. O PostgreSQL nã
 - `ponto_material (material_id)`: RF06 (filtro por material). A PK já cobre `ponto_id`
 - `solicitacao (ponto_id, situacao, criada_em)`: RF09
 - `solicitacao (morador_id, criada_em)`: RF09 (contexto do morador)
+- `solicitacao (criada_em, situacao)`: RF15 (contagem por situação e criação)
+- `solicitacao (situacao, concluida_em)`: RF15 (recolhimentos de concluídas por período)
 - `item_solicitacao (material_id)`: RF15 (totais por material)
 - `historico_solicitacao (solicitacao_id, ocorrido_em)`: RF09
 - `endereco (morador_id)`: listar endereços do morador
