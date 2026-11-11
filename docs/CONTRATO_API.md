@@ -337,7 +337,7 @@ Todos os caminhos usam o prefixo `/api/v1`. Só o morador cria e corrige: enviar
 
 **Entrada da criação:** `enderecoId`, `pontoId`, `observacoes` (opcional) e `itens` não vazio de `{materialId, quantidadeEstimada}`. **Entrada da correção:** `versao` (a que o cliente leu), `enderecoId` e `itens` (a lista substitui todos os itens). O ponto e as observações não mudam na correção.
 
-**Saída (`SolicitacaoResponse`):** `id`, `protocolo` (`CS-AAAAMMDD-XXXXXX`, único), `situacao`, `versao`, `criadaEm`, `moradorId`, `pontoId`, `endereco` (cópia), `observacoes`, `itens` (com `unidade` copiada e `quantidadeEfetiva` nula até a conclusão) e `historico` em ordem cronológica. Datas saem em UTC (`...Z`).
+**Saída (`SolicitacaoResponse`):** `id`, `protocolo` (`CS-AAAAMMDD-XXXXXX`, único), `situacao`, `versao`, `criadaEm`, `agendadaPara`, `concluidaEm`, `moradorId`, `pontoId`, `endereco` (cópia), `observacoes`, `itens` (com `unidade` copiada e `quantidadeEfetiva` nula até a conclusão) e `historico` em ordem cronológica. Datas saem em UTC (`...Z`).
 
 **Validações (criação e correção).** Qualquer erro não grava nada.
 
@@ -398,6 +398,50 @@ Location: /api/v1/solicitacoes/29
 409 Conflict
 
 {"codigo": "MATERIAL_INCOMPATIVEL", "mensagem": "O ponto não aceita o material Papel.", "errosCampos": []}
+```
+
+## Consulta de solicitações (API-11)
+
+Todos os caminhos usam o prefixo `/api/v1` e exigem um ator do [contexto de demonstração](#operadores-e-contexto-de-demonstração-api-09). Decisões em [docs/documentos-issues/issue-api-11](documentos-issues/issue-api-11/Registro_de_decisoes.md).
+
+| Operação | Sucesso | Erros possíveis |
+| --- | --- | --- |
+| `GET /solicitacoes?inicio=&fim=&situacao=&pontoId=&page=&size=` | `200`, `PaginaResponse<SolicitacaoResumoResponse>` | `400`, `403` |
+| `GET /solicitacoes/{id}` | `200`, `SolicitacaoResponse` (o mesmo da criação) | `403`, `404` |
+| `GET /solicitacoes/{id}/historico` | `200`, lista de linhas do histórico | `403`, `404` |
+
+**Contexto (RF09).** O backend decide o que cada ator vê; os filtros nunca ampliam esse limite.
+
+| Ator | Vê |
+| --- | --- |
+| `MORADOR` | só as próprias solicitações |
+| `OPERADOR` | só as solicitações dos pontos aos quais está vinculado |
+| `ADMINISTRADOR` | todas |
+
+Detalhe ou histórico fora do contexto responde `404 REGISTRO_NAO_ENCONTRADO`, igual a um id que não existe: a resposta não revela nada da solicitação. Na lista, o que está fora do contexto não aparece (operador filtrando por ponto que não é dele recebe lista vazia). Ator ausente ou desconhecido responde `403 ACESSO_NEGADO`.
+
+**Filtros da lista**, todos opcionais e combináveis:
+
+- `inicio` e `fim`: período pela **data de criação**, com início **inclusivo** e fim **exclusivo**, em ISO 8601 **com offset obrigatório** (`2026-11-01T00:00:00Z` ou `2026-11-01T00:00:00-03:00`). Sem offset, ou com `inicio` igual ou posterior a `fim`: `400` apontando o campo. Na URL, o sinal `+` de um offset positivo deve ser codificado como `%2B`.
+- `situacao`: um dos seis valores (`SOLICITADA`, `AGENDADA`, `RECUSADA`, `CANCELADA`, `EM_RECOLHIMENTO`, `CONCLUIDA`). Valor desconhecido: `400`.
+- `pontoId`: solicitações daquele ponto.
+
+**Ordem e paginação.** Da mais recente para a mais antiga pela data de criação, com o `id` como desempate; `size` de 1 a 100.
+
+**Conteúdo.** A lista traz `id`, `protocolo`, `situacao`, `criadaEm`, `agendadaPara`, `concluidaEm`, `moradorId`, `pontoId` e `nomePonto`. O detalhe traz também `versao`, o endereço e as unidades **copiados** (RN04), `observacoes`, os itens e o histórico. As respostas não trazem nome, e-mail nem telefone do morador. Datas em UTC.
+
+**Histórico.** Em ordem cronológica, com o `id` como desempate. Cada linha: `situacaoAnterior` (nula na criação), `situacaoNova`, `ocorridoEm`, `responsavelTipo` (`MORADOR`, `OPERADOR` ou `ADMIN`), `responsavelId`, `motivo` e `agendamentoNovo`. Não é paginado.
+
+**Exemplo: operador do ponto B pedindo o detalhe de uma solicitação do ponto A**
+
+```http
+GET /api/v1/solicitacoes/39
+X-Ator-Tipo: OPERADOR
+X-Ator-Id: 28
+
+404 Not Found
+
+{"codigo": "REGISTRO_NAO_ENCONTRADO", "mensagem": "Solicitação não encontrado(a): 39", "errosCampos": []}
 ```
 
 ## Ações e versão
