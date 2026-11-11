@@ -1,0 +1,4547 @@
+# Contrato gerado pelo SpringDoc e complementado com exemplos HTTP verificados.
+openapi: 3.1.0
+info:
+  title: API do Sistema de Coleta Seletiva
+  description: API acadêmica com exemplos capturados em ambiente local com dados fictícios. Substitua os IDs pelos
+    registros do seu ambiente. Para agendar ou reagendar, use uma data futura com fuso horário. Envie a versão retornada
+    pela última leitura nas mutações de uma solicitação existente. Se receber CONFLITO_VERSAO, releia o registro
+    antes de tentar novamente. O contexto por cabeçalhos serve para demonstração. As páginas começam em 0 e aceitam
+    size de 1 a 100.
+  version: v1
+servers:
+- url: http://localhost:8080
+  description: Ambiente local
+tags:
+- name: Moradores
+  description: Cadastro, consulta e atualização de moradores
+- name: Consulta pública
+  description: Pontos e materiais ativos, sem dados de moradores ou operadores
+- name: Endereços
+  description: Endereços de um morador; cada endereço pertence a um único morador
+- name: Indicadores
+  description: Resumo gerencial no contexto de demonstração do administrador
+- name: Solicitações
+  description: Criação, correção, consultas e ações pelo contexto do ator (X-Ator-Tipo e X-Ator-Id). Simulação de
+    demonstração, não é autenticação
+- name: Operadores
+  description: Cadastro de operadores e vínculos com pontos. Exige o cabeçalho X-Ator-Tipo (simulação de demonstração,
+    não é autenticação)
+- name: Materiais aceitos
+  description: Vínculo entre pontos de coleta e materiais, com observações e limite
+- name: Contexto de demonstração
+  description: Seleção de ator fictício. Não é autenticação nem serve para produção
+- name: Pontos de coleta
+  description: Cadastro administrativo de pontos de coleta, incluindo pontos inativos
+- name: Materiais
+  description: Catálogo administrativo de materiais e unidades, incluindo materiais inativos
+paths:
+  /api/v1/solicitacoes/{id}/dados:
+    put:
+      tags:
+      - Solicitações
+      summary: Corrige endereço e itens de uma solicitação ainda em SOLICITADA
+      description: 'Recebe a versão lida pelo cliente, refaz todas as validações e registra os dados anteriores
+        no histórico. Versão antiga: 409 CONFLITO_VERSAO; já agendada: 409 TRANSICAO_INVALIDA'
+      operationId: corrigir
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: MORADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoCorrecaoRequest'
+            example:
+              enderecoId: 1
+              itens:
+              - materialId: 1
+                quantidadeEstimada: 4
+              versao: 0
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: SOLICITADA
+                versao: 1
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: null
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 4
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.824Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                    CEP 49000000. Itens anteriores: Papel 3 KG.'
+                  agendamentoNovo: null
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/pontos/{pontoId}/materiais/{materialId}:
+    put:
+      tags:
+      - Materiais aceitos
+      summary: Vincula um material ao ponto ou atualiza o vínculo; repetir nunca cria segunda linha
+      description: 201 quando o vínculo é criado, 200 quando já existia e foi atualizado
+      operationId: vincular
+      parameters:
+      - name: pontoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: materialId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PontoMaterialRequest'
+            example:
+              limitePorSolicitacao: 10
+              observacoes: Papel seco.
+        required: true
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PontoMaterialResponse'
+              example:
+                pontoId: 1
+                materialId: 1
+                nomeMaterial: Papel
+                unidade: KG
+                orientacaoPreparo: Mantenha o papel seco.
+                observacoes: Papel seco.
+                limitePorSolicitacao: 10
+        '404':
+          description: 'Material não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Material não encontrado(a): 999999'
+                errosCampos: []
+        '200':
+          description: Vínculo existente atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PontoMaterialResponse'
+              example:
+                pontoId: 1
+                materialId: 1
+                nomeMaterial: Papel
+                unidade: KG
+                orientacaoPreparo: Mantenha o papel seco.
+                observacoes: Papel seco.
+                limitePorSolicitacao: 10
+    delete:
+      tags:
+      - Materiais aceitos
+      summary: Remove o vínculo entre o ponto e o material
+      description: Retorna 409 se uma solicitação aberta do ponto contiver o material
+      operationId: remover
+      parameters:
+      - name: pontoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      - name: materialId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      responses:
+        '204':
+          description: Operação concluída, sem corpo de resposta.
+        '404':
+          description: 'Material aceito não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Material aceito não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/pontos/{id}:
+    get:
+      tags:
+      - Pontos de coleta
+      summary: Detalha um ponto de coleta, inclusive se estiver inativo
+      operationId: buscar
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PontoResponse'
+              example:
+                id: 3
+                nome: Ecoponto Exemplo
+                logradouro: Rua Fictícia
+                numero: '10'
+                semNumero: false
+                bairro: Centro
+                municipio: Cidade Demonstração
+                uf: SE
+                cep: '49000000'
+                complemento: null
+                contato: null
+                horarios: null
+                recolhimentoDomiciliar: true
+                ativo: true
+        '404':
+          description: 'Ponto não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Ponto não encontrado(a): 999999'
+                errosCampos: []
+    put:
+      tags:
+      - Pontos de coleta
+      summary: Atualiza os dados de um ponto de coleta sem alterar sua situação
+      operationId: atualizar
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PontoRequest'
+            example:
+              logradouro: Rua Fictícia
+              numero: '10'
+              bairro: Centro
+              municipio: Cidade Demonstração
+              uf: SE
+              cep: '49000000'
+              nome: Ecoponto Exemplo
+              recolhimentoDomiciliar: true
+              horarios: Seg a sex, 8h às 17h
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PontoResponse'
+              example:
+                id: 3
+                nome: Ecoponto Exemplo
+                logradouro: Rua Fictícia
+                numero: '10'
+                semNumero: false
+                bairro: Centro
+                municipio: Cidade Demonstração
+                uf: SE
+                cep: '49000000'
+                complemento: null
+                contato: null
+                horarios: Seg a sex, 8h às 17h
+                recolhimentoDomiciliar: true
+                ativo: true
+        '404':
+          description: 'Ponto não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Ponto não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/operadores/{id}:
+    get:
+      tags:
+      - Operadores
+      summary: Consulta um operador e seus vínculos (administrador ou o próprio operador)
+      operationId: buscar_1
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperadorResponse'
+              example:
+                id: 3
+                nome: Operador Exemplo
+                email: operador@example.org
+                ativo: true
+                pontos: []
+        '404':
+          description: 'Operador não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Operador não encontrado(a): 999999'
+                errosCampos: []
+    put:
+      tags:
+      - Operadores
+      summary: Atualiza nome e e-mail de um operador (administrador)
+      operationId: atualizar_1
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperadorRequest'
+            example:
+              nome: Operador de Apoio
+              email: operador@example.org
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperadorResponse'
+              example:
+                id: 3
+                nome: Operador de Apoio
+                email: operador@example.org
+                ativo: true
+                pontos: []
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+  /api/v1/operadores/{id}/pontos/{pontoId}:
+    put:
+      tags:
+      - Operadores
+      summary: Vincula o operador ao ponto (administrador); repetir nunca cria segunda linha
+      description: 201 quando o vínculo é criado, 200 quando já existia
+      operationId: vincular_1
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      - name: pontoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperadorResponse'
+              example:
+                id: 3
+                nome: Operador de Apoio
+                email: operador@example.org
+                ativo: true
+                pontos:
+                - id: 3
+                  nome: Ecoponto Exemplo
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+        '200':
+          description: Vínculo já existente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperadorResponse'
+              example:
+                id: 3
+                nome: Operador de Apoio
+                email: operador@example.org
+                ativo: true
+                pontos:
+                - id: 3
+                  nome: Ecoponto Exemplo
+    delete:
+      tags:
+      - Operadores
+      summary: Remove o vínculo entre o operador e o ponto (administrador)
+      operationId: desvincular
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      - name: pontoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      responses:
+        '204':
+          description: Operação concluída, sem corpo de resposta.
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+  /api/v1/moradores/{moradorId}/enderecos/{enderecoId}:
+    put:
+      tags:
+      - Endereços
+      summary: Atualiza um endereço do morador; endereço de outro morador responde 404
+      operationId: atualizar_2
+      parameters:
+      - name: moradorId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: enderecoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnderecoRequest'
+            example:
+              logradouro: Rua Fictícia
+              numero: '10'
+              bairro: Centro
+              municipio: Cidade Demonstração
+              uf: SE
+              cep: '49000000'
+              complemento: Casa
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnderecoResponse'
+              example:
+                id: 1
+                moradorId: 1
+                logradouro: Rua Fictícia
+                numero: '10'
+                semNumero: false
+                bairro: Centro
+                municipio: Cidade Demonstração
+                uf: SE
+                cep: '49000000'
+                complemento: Casa
+                ativo: true
+        '404':
+          description: 'Endereço não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Endereço não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/moradores/{id}:
+    get:
+      tags:
+      - Moradores
+      summary: Consulta um morador pelo identificador
+      operationId: buscar_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoradorResponse'
+              example:
+                id: 2
+                nome: Alex Exemplo
+                email: alex@example.org
+                telefone: null
+                ativo: true
+        '404':
+          description: 'Morador não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Morador não encontrado(a): 999999'
+                errosCampos: []
+    put:
+      tags:
+      - Moradores
+      summary: Atualiza nome, e-mail e telefone de um morador
+      operationId: atualizar_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoradorRequest'
+            example:
+              nome: Alex Exemplo
+              email: alex@example.org
+              telefone: '79900000000'
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoradorResponse'
+              example:
+                id: 2
+                nome: Alex Exemplo
+                email: alex@example.org
+                telefone: '79900000000'
+                ativo: true
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: nome
+                  mensagem: não deve estar em branco
+                - campo: email
+                  mensagem: não deve estar em branco
+  /api/v1/materiais/{id}:
+    get:
+      tags:
+      - Materiais
+      summary: Detalha um material, inclusive se estiver inativo
+      operationId: buscar_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialResponse'
+              example:
+                id: 1
+                nome: Papel
+                descricao: null
+                unidade: KG
+                orientacaoPreparo: Mantenha o papel seco.
+                ativo: true
+        '404':
+          description: 'Material não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Material não encontrado(a): 999999'
+                errosCampos: []
+    put:
+      tags:
+      - Materiais
+      summary: Atualiza os dados de um material sem alterar sua situação ou cópias históricas
+      operationId: atualizar_4
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaterialRequest'
+            example:
+              nome: Papel
+              unidade: KG
+              orientacaoPreparo: Mantenha o papel seco.
+              descricao: Papel reciclável
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialResponse'
+              example:
+                id: 1
+                nome: Papel
+                descricao: Papel reciclável
+                unidade: KG
+                orientacaoPreparo: Mantenha o papel seco.
+                ativo: true
+        '404':
+          description: 'Material não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Material não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/solicitacoes:
+    get:
+      tags:
+      - Solicitações
+      summary: Lista solicitações do contexto do ator, da mais recente para a mais antiga
+      description: 'Morador vê as próprias; operador, as dos seus pontos; administrador, todas. Filtros opcionais
+        e combináveis. Período pela data de criação, com início inclusivo e fim exclusivo, em ISO 8601 com offset
+        (ex.: 2026-11-01T00:00:00Z)'
+      operationId: listar
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: MORADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: inicio
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+        example: '2026-11-10T23:34:31Z'
+      - name: fim
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+        example: '2026-11-12T23:34:31Z'
+      - name: situacao
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - SOLICITADA
+          - AGENDADA
+          - RECUSADA
+          - CANCELADA
+          - EM_RECOLHIMENTO
+          - CONCLUIDA
+        example: CONCLUIDA
+      - name: pontoId
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponseSolicitacaoResumoResponse'
+              example:
+                content:
+                - id: 1
+                  protocolo: CS-20261111-NQEHCS
+                  situacao: CONCLUIDA
+                  criadaEm: '2026-11-11T23:34:31.702Z'
+                  agendadaPara: '2026-11-14T23:34:31Z'
+                  concluidaEm: '2026-11-11T23:34:31.931Z'
+                  moradorId: 1
+                  pontoId: 1
+                  nomePonto: Ecoponto Demo A
+                page: 0
+                size: 1
+                totalElements: 1
+                totalPages: 1
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: size
+                  mensagem: deve estar entre 1 e 100
+    post:
+      tags:
+      - Solicitações
+      summary: Cria uma solicitação com itens e histórico inicial, em uma única transação
+      description: Exige ponto ativo com recolhimento domiciliar e materiais ativos, aceitos, sem repetição e dentro
+        do limite. Qualquer erro não grava nada
+      operationId: criar
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: MORADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoRequest'
+            example:
+              enderecoId: 1
+              pontoId: 1
+              itens:
+              - materialId: 1
+                quantidadeEstimada: 3
+        required: true
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: SOLICITADA
+                versao: 0
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: null
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 3
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              example: http://localhost:8080/api/v1/solicitacoes/1
+        '409':
+          description: Material inativo não pode ser usado em uma nova solicitação.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: MATERIAL_INCOMPATIVEL
+                mensagem: Material inativo não pode ser usado em uma nova solicitação.
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/tentativa-sem-sucesso:
+    post:
+      tags:
+      - Solicitações
+      summary: Registra a tentativa sem sucesso e agenda a próxima coleta
+      operationId: registrarTentativaSemSucesso
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: OPERADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoReagendamentoRequest'
+            example:
+              agendadaPara: '2026-11-13T23:34:31Z'
+              motivo: Portão fechado
+              versao: 3
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: AGENDADA
+                versao: 4
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: '2026-11-13T23:34:31Z'
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 4
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.824Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                    CEP 49000000. Itens anteriores: Papel 3 KG.'
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.843Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: '2026-11-12T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: EM_RECOLHIMENTO
+                  ocorridoEm: '2026-11-11T23:34:31.86Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: EM_RECOLHIMENTO
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.88Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Portão fechado
+                  agendamentoNovo: '2026-11-13T23:34:31Z'
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/recusa:
+    post:
+      tags:
+      - Solicitações
+      summary: Recusa uma solicitação do ponto do operador com motivo
+      operationId: recusar
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: OPERADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoEncerramentoRequest'
+            example:
+              motivo: Indisponibilidade fictícia
+              versao: 0
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 3
+                protocolo: CS-20261111-B6U49X
+                situacao: RECUSADA
+                versao: 1
+                criadaEm: '2026-11-11T23:34:31.753Z'
+                agendadaPara: null
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 3
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.753Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: RECUSADA
+                  ocorridoEm: '2026-11-11T23:34:31.786Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Indisponibilidade fictícia
+                  agendamentoNovo: null
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/reagendamento:
+    post:
+      tags:
+      - Solicitações
+      summary: Reagenda uma solicitação agendada com motivo e data futura
+      operationId: reagendar
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: OPERADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoReagendamentoRequest'
+            example:
+              agendadaPara: '2026-11-14T23:34:31Z'
+              motivo: Disponibilidade do morador
+              versao: 4
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: AGENDADA
+                versao: 5
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: '2026-11-14T23:34:31Z'
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 4
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.824Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                    CEP 49000000. Itens anteriores: Papel 3 KG.'
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.843Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: '2026-11-12T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: EM_RECOLHIMENTO
+                  ocorridoEm: '2026-11-11T23:34:31.86Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: EM_RECOLHIMENTO
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.88Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Portão fechado
+                  agendamentoNovo: '2026-11-13T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.897Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Disponibilidade do morador
+                  agendamentoNovo: '2026-11-14T23:34:31Z'
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/inicio:
+    post:
+      tags:
+      - Solicitações
+      summary: Inicia o recolhimento de uma solicitação agendada do ponto do operador
+      operationId: iniciar
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: OPERADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoInicioRequest'
+            example:
+              versao: 2
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: EM_RECOLHIMENTO
+                versao: 3
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: '2026-11-12T23:34:31Z'
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 4
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.824Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                    CEP 49000000. Itens anteriores: Papel 3 KG.'
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.843Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: '2026-11-12T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: EM_RECOLHIMENTO
+                  ocorridoEm: '2026-11-11T23:34:31.86Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/conclusao:
+    post:
+      tags:
+      - Solicitações
+      summary: Conclui o recolhimento com a quantidade efetiva de cada item
+      operationId: concluir
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: OPERADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoConclusaoRequest'
+            example:
+              itens:
+              - materialId: 1
+                quantidadeEfetiva: 2.5
+              versao: 6
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: CONCLUIDA
+                versao: 7
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: '2026-11-14T23:34:31Z'
+                concluidaEm: '2026-11-11T23:34:31.931Z'
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 4
+                  quantidadeEfetiva: 2.5
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.824Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                    CEP 49000000. Itens anteriores: Papel 3 KG.'
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.843Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: '2026-11-12T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: EM_RECOLHIMENTO
+                  ocorridoEm: '2026-11-11T23:34:31.86Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: EM_RECOLHIMENTO
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.88Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Portão fechado
+                  agendamentoNovo: '2026-11-13T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.897Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Disponibilidade do morador
+                  agendamentoNovo: '2026-11-14T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: EM_RECOLHIMENTO
+                  ocorridoEm: '2026-11-11T23:34:31.913Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: EM_RECOLHIMENTO
+                  situacaoNova: CONCLUIDA
+                  ocorridoEm: '2026-11-11T23:34:31.931Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/cancelamento:
+    post:
+      tags:
+      - Solicitações
+      summary: Cancela com motivo pelo morador dono ou pelo operador do ponto
+      operationId: cancelar
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: MORADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoEncerramentoRequest'
+            example:
+              motivo: Desistência fictícia
+              versao: 0
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 2
+                protocolo: CS-20261111-QYNCNX
+                situacao: CANCELADA
+                versao: 1
+                criadaEm: '2026-11-11T23:34:31.738Z'
+                agendadaPara: null
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 3
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.738Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: CANCELADA
+                  ocorridoEm: '2026-11-11T23:34:31.77Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: Desistência fictícia
+                  agendamentoNovo: null
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/agendamento:
+    post:
+      tags:
+      - Solicitações
+      summary: Agenda uma solicitação do ponto do operador para uma data futura
+      operationId: agendar
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: OPERADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoAgendamentoRequest'
+            example:
+              agendadaPara: '2026-11-12T23:34:31Z'
+              versao: 1
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: AGENDADA
+                versao: 2
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: '2026-11-12T23:34:31Z'
+                concluidaEm: null
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 4
+                  quantidadeEfetiva: null
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.824Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                    CEP 49000000. Itens anteriores: Papel 3 KG.'
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.843Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: '2026-11-12T23:34:31Z'
+        '409':
+          description: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: CONFLITO_VERSAO
+                mensagem: A solicitação foi alterada por outra operação. Recarregue e tente novamente.
+                errosCampos: []
+  /api/v1/pontos:
+    get:
+      tags:
+      - Pontos de coleta
+      summary: Lista pontos de coleta por nome, com paginação e filtro opcional de situação
+      operationId: listar_1
+      parameters:
+      - name: ativo
+        in: query
+        required: false
+        schema:
+          type: boolean
+        example: true
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponsePontoResponse'
+              example:
+                content:
+                - id: 1
+                  nome: Ecoponto Demo A
+                  logradouro: Rua Fictícia
+                  numero: '100'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: null
+                  contato: contato@demo.exemplo.org
+                  horarios: Seg a sex, 8h às 17h
+                  recolhimentoDomiciliar: true
+                  ativo: true
+                page: 0
+                size: 1
+                totalElements: 3
+                totalPages: 3
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: size
+                  mensagem: deve estar entre 1 e 100
+    post:
+      tags:
+      - Pontos de coleta
+      summary: Cadastra um ponto de coleta ativo
+      operationId: cadastrar
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PontoRequest'
+            example:
+              logradouro: Rua Fictícia
+              numero: '10'
+              bairro: Centro
+              municipio: Cidade Demonstração
+              uf: SE
+              cep: '49000000'
+              nome: Ecoponto Exemplo
+              recolhimentoDomiciliar: true
+        required: true
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PontoResponse'
+              example:
+                id: 3
+                nome: Ecoponto Exemplo
+                logradouro: Rua Fictícia
+                numero: '10'
+                semNumero: false
+                bairro: Centro
+                municipio: Cidade Demonstração
+                uf: SE
+                cep: '49000000'
+                complemento: null
+                contato: null
+                horarios: null
+                recolhimentoDomiciliar: true
+                ativo: true
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              example: http://localhost:8080/api/v1/pontos/3
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: logradouro
+                  mensagem: não deve estar em branco
+                - campo: uf
+                  mensagem: não deve estar em branco
+                - campo: municipio
+                  mensagem: não deve estar em branco
+                - campo: bairro
+                  mensagem: não deve estar em branco
+                - campo: recolhimentoDomiciliar
+                  mensagem: não deve ser nulo
+                - campo: cep
+                  mensagem: não deve estar em branco
+                - campo: nome
+                  mensagem: não deve estar em branco
+  /api/v1/operadores:
+    get:
+      tags:
+      - Operadores
+      summary: Lista operadores por nome, com seus pontos (administrador)
+      operationId: listar_2
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponseOperadorResponse'
+              example:
+                content:
+                - id: 1
+                  nome: Ana Operadora (ponto A)
+                  email: ana@demo.exemplo.org
+                  ativo: true
+                  pontos:
+                  - id: 1
+                    nome: Ecoponto Demo A
+                page: 0
+                size: 1
+                totalElements: 3
+                totalPages: 3
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+    post:
+      tags:
+      - Operadores
+      summary: Cadastra um operador (administrador); o e-mail é normalizado e deve ser único
+      operationId: cadastrar_1
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperadorRequest'
+            example:
+              nome: Operador Exemplo
+              email: operador@example.org
+        required: true
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperadorResponse'
+              example:
+                id: 3
+                nome: Operador Exemplo
+                email: operador@example.org
+                ativo: true
+                pontos: []
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              example: http://localhost:8080/api/v1/operadores/3
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+  /api/v1/moradores:
+    post:
+      tags:
+      - Moradores
+      summary: Cadastra um morador; o e-mail é normalizado e deve ser único
+      operationId: cadastrar_2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoradorRequest'
+            example:
+              nome: Alex Exemplo
+              email: alex@example.org
+        required: true
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoradorResponse'
+              example:
+                id: 2
+                nome: Alex Exemplo
+                email: alex@example.org
+                telefone: null
+                ativo: true
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              example: http://localhost:8080/api/v1/moradores/2
+        '409':
+          description: Já existe um morador com este e-mail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: DUPLICIDADE
+                mensagem: Já existe um morador com este e-mail.
+                errosCampos: []
+  /api/v1/moradores/{moradorId}/enderecos:
+    get:
+      tags:
+      - Endereços
+      summary: Lista, em páginas, os endereços do morador
+      operationId: listar_3
+      parameters:
+      - name: moradorId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponseEnderecoResponse'
+              example:
+                content:
+                - id: 1
+                  moradorId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: null
+                  ativo: true
+                page: 0
+                size: 1
+                totalElements: 1
+                totalPages: 1
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: size
+                  mensagem: deve estar entre 1 e 100
+    post:
+      tags:
+      - Endereços
+      summary: Cadastra um endereço para o morador
+      operationId: cadastrar_3
+      parameters:
+      - name: moradorId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnderecoRequest'
+            example:
+              logradouro: Rua Fictícia
+              numero: '10'
+              bairro: Centro
+              municipio: Cidade Demonstração
+              uf: SE
+              cep: '49000000'
+        required: true
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnderecoResponse'
+              example:
+                id: 1
+                moradorId: 1
+                logradouro: Rua Fictícia
+                numero: '10'
+                semNumero: false
+                bairro: Centro
+                municipio: Cidade Demonstração
+                uf: SE
+                cep: '49000000'
+                complemento: null
+                ativo: true
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              example: http://localhost:8080/api/v1/moradores/1/enderecos/1
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: cep
+                  mensagem: não deve estar em branco
+                - campo: logradouro
+                  mensagem: não deve estar em branco
+                - campo: municipio
+                  mensagem: não deve estar em branco
+                - campo: bairro
+                  mensagem: não deve estar em branco
+                - campo: uf
+                  mensagem: não deve estar em branco
+  /api/v1/materiais:
+    get:
+      tags:
+      - Materiais
+      summary: Lista materiais por nome, com paginação e filtro opcional de situação
+      operationId: listar_4
+      parameters:
+      - name: ativo
+        in: query
+        required: false
+        schema:
+          type: boolean
+        example: true
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponseMaterialResponse'
+              example:
+                content:
+                - id: 1
+                  nome: Papel
+                  descricao: null
+                  unidade: KG
+                  orientacaoPreparo: Mantenha o papel seco.
+                  ativo: true
+                page: 0
+                size: 1
+                totalElements: 2
+                totalPages: 2
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: size
+                  mensagem: deve estar entre 1 e 100
+    post:
+      tags:
+      - Materiais
+      summary: Cadastra um material ativo com nome único
+      operationId: cadastrar_4
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaterialRequest'
+            example:
+              nome: Papel
+              unidade: KG
+              orientacaoPreparo: Mantenha o papel seco.
+        required: true
+      responses:
+        '201':
+          description: Recurso criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialResponse'
+              example:
+                id: 1
+                nome: Papel
+                descricao: null
+                unidade: KG
+                orientacaoPreparo: Mantenha o papel seco.
+                ativo: true
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              example: http://localhost:8080/api/v1/materiais/1
+        '409':
+          description: Já existe um material com este nome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: DUPLICIDADE
+                mensagem: Já existe um material com este nome.
+                errosCampos: []
+  /api/v1/pontos/{id}/situacao:
+    patch:
+      tags:
+      - Pontos de coleta
+      summary: Inativa ou reativa um ponto de coleta, preservando seu cadastro
+      description: A inativação retorna 409 quando houver solicitações abertas no ponto
+      operationId: alterarSituacao
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PontoSituacaoRequest'
+            example:
+              ativo: false
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PontoResponse'
+              example:
+                id: 3
+                nome: Ecoponto Exemplo
+                logradouro: Rua Fictícia
+                numero: '10'
+                semNumero: false
+                bairro: Centro
+                municipio: Cidade Demonstração
+                uf: SE
+                cep: '49000000'
+                complemento: null
+                contato: null
+                horarios: Seg a sex, 8h às 17h
+                recolhimentoDomiciliar: true
+                ativo: false
+        '404':
+          description: 'Ponto não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Ponto não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/moradores/{id}/situacao:
+    patch:
+      tags:
+      - Moradores
+      summary: Inativa ou reativa um morador, preservando seus registros
+      operationId: alterarSituacao_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoradorSituacaoRequest'
+            example:
+              ativo: false
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoradorResponse'
+              example:
+                id: 2
+                nome: Alex Exemplo
+                email: alex@example.org
+                telefone: '79900000000'
+                ativo: false
+        '404':
+          description: 'Morador não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Morador não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/materiais/{id}/situacao:
+    patch:
+      tags:
+      - Materiais
+      summary: Inativa ou reativa um material, preservando seus vínculos
+      operationId: alterarSituacao_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaterialSituacaoRequest'
+            example:
+              ativo: false
+        required: true
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialResponse'
+              example:
+                id: 2
+                nome: Vidro
+                descricao: null
+                unidade: KG
+                orientacaoPreparo: null
+                ativo: false
+        '404':
+          description: 'Material não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Material não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/solicitacoes/{id}:
+    get:
+      tags:
+      - Solicitações
+      summary: Detalha uma solicitação do contexto do ator, com itens, endereço copiado e histórico
+      description: Fora do contexto responde 404, como se não existisse
+      operationId: buscar_4
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: MORADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitacaoResponse'
+              example:
+                id: 1
+                protocolo: CS-20261111-NQEHCS
+                situacao: CONCLUIDA
+                versao: 7
+                criadaEm: '2026-11-11T23:34:31.702Z'
+                agendadaPara: '2026-11-14T23:34:31Z'
+                concluidaEm: '2026-11-11T23:34:31.931Z'
+                moradorId: 1
+                pontoId: 1
+                endereco:
+                  enderecoId: 1
+                  logradouro: Rua Fictícia
+                  numero: '10'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: Casa
+                observacoes: null
+                itens:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEstimada: 4
+                  quantidadeEfetiva: 2.5
+                historico:
+                - situacaoAnterior: null
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.702Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: SOLICITADA
+                  ocorridoEm: '2026-11-11T23:34:31.824Z'
+                  responsavelTipo: MORADOR
+                  responsavelId: 1
+                  motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                    CEP 49000000. Itens anteriores: Papel 3 KG.'
+                  agendamentoNovo: null
+                - situacaoAnterior: SOLICITADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.843Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: '2026-11-12T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: EM_RECOLHIMENTO
+                  ocorridoEm: '2026-11-11T23:34:31.86Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: EM_RECOLHIMENTO
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.88Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Portão fechado
+                  agendamentoNovo: '2026-11-13T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: AGENDADA
+                  ocorridoEm: '2026-11-11T23:34:31.897Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: Disponibilidade do morador
+                  agendamentoNovo: '2026-11-14T23:34:31Z'
+                - situacaoAnterior: AGENDADA
+                  situacaoNova: EM_RECOLHIMENTO
+                  ocorridoEm: '2026-11-11T23:34:31.913Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+                - situacaoAnterior: EM_RECOLHIMENTO
+                  situacaoNova: CONCLUIDA
+                  ocorridoEm: '2026-11-11T23:34:31.931Z'
+                  responsavelTipo: OPERADOR
+                  responsavelId: 1
+                  motivo: null
+                  agendamentoNovo: null
+        '404':
+          description: 'Solicitação não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Solicitação não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/solicitacoes/{id}/historico:
+    get:
+      tags:
+      - Solicitações
+      summary: 'Histórico da solicitação em ordem cronológica: situações, data, responsável e motivo'
+      description: Fora do contexto responde 404, como se não existisse
+      operationId: listarHistorico
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: MORADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Historico'
+              example:
+              - situacaoAnterior: null
+                situacaoNova: SOLICITADA
+                ocorridoEm: '2026-11-11T23:34:31.702Z'
+                responsavelTipo: MORADOR
+                responsavelId: 1
+                motivo: null
+                agendamentoNovo: null
+              - situacaoAnterior: SOLICITADA
+                situacaoNova: SOLICITADA
+                ocorridoEm: '2026-11-11T23:34:31.824Z'
+                responsavelTipo: MORADOR
+                responsavelId: 1
+                motivo: 'Correção de dados. Endereço anterior: Rua Fictícia, 10, Centro, Cidade Demonstração/SE,
+                  CEP 49000000. Itens anteriores: Papel 3 KG.'
+                agendamentoNovo: null
+              - situacaoAnterior: SOLICITADA
+                situacaoNova: AGENDADA
+                ocorridoEm: '2026-11-11T23:34:31.843Z'
+                responsavelTipo: OPERADOR
+                responsavelId: 1
+                motivo: null
+                agendamentoNovo: '2026-11-12T23:34:31Z'
+              - situacaoAnterior: AGENDADA
+                situacaoNova: EM_RECOLHIMENTO
+                ocorridoEm: '2026-11-11T23:34:31.86Z'
+                responsavelTipo: OPERADOR
+                responsavelId: 1
+                motivo: null
+                agendamentoNovo: null
+              - situacaoAnterior: EM_RECOLHIMENTO
+                situacaoNova: AGENDADA
+                ocorridoEm: '2026-11-11T23:34:31.88Z'
+                responsavelTipo: OPERADOR
+                responsavelId: 1
+                motivo: Portão fechado
+                agendamentoNovo: '2026-11-13T23:34:31Z'
+              - situacaoAnterior: AGENDADA
+                situacaoNova: AGENDADA
+                ocorridoEm: '2026-11-11T23:34:31.897Z'
+                responsavelTipo: OPERADOR
+                responsavelId: 1
+                motivo: Disponibilidade do morador
+                agendamentoNovo: '2026-11-14T23:34:31Z'
+              - situacaoAnterior: AGENDADA
+                situacaoNova: EM_RECOLHIMENTO
+                ocorridoEm: '2026-11-11T23:34:31.913Z'
+                responsavelTipo: OPERADOR
+                responsavelId: 1
+                motivo: null
+                agendamentoNovo: null
+              - situacaoAnterior: EM_RECOLHIMENTO
+                situacaoNova: CONCLUIDA
+                ocorridoEm: '2026-11-11T23:34:31.931Z'
+                responsavelTipo: OPERADOR
+                responsavelId: 1
+                motivo: null
+                agendamentoNovo: null
+        '404':
+          description: 'Solicitação não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Solicitação não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/publico/pontos:
+    get:
+      tags:
+      - Consulta pública
+      summary: Busca pontos ativos por nome (contém), município, bairro e material aceito
+      description: Filtros opcionais e combináveis, sem diferenciar maiúsculas. Ordem por nome e id
+      operationId: buscarPontos
+      parameters:
+      - name: nome
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: municipio
+        in: query
+        required: false
+        schema:
+          type: string
+        example: Cidade Demonstração
+      - name: bairro
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: materialId
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponsePontoPublicoResponse'
+              example:
+                content:
+                - id: 1
+                  nome: Ecoponto Demo A
+                  logradouro: Rua Fictícia
+                  numero: '100'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: null
+                  contato: contato@demo.exemplo.org
+                  horarios: Seg a sex, 8h às 17h
+                  recolhimentoDomiciliar: true
+                page: 0
+                size: 1
+                totalElements: 1
+                totalPages: 1
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: size
+                  mensagem: deve estar entre 1 e 100
+  /api/v1/publico/pontos/{id}:
+    get:
+      tags:
+      - Consulta pública
+      summary: Detalha um ponto ativo com endereço, contato, horários e materiais aceitos
+      description: Ponto inativo responde 404, como se não existisse
+      operationId: detalharPonto
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PontoPublicoDetalheResponse'
+              example:
+                ponto:
+                  id: 1
+                  nome: Ecoponto Demo A
+                  logradouro: Rua Fictícia
+                  numero: '100'
+                  semNumero: false
+                  bairro: Centro
+                  municipio: Cidade Demonstração
+                  uf: SE
+                  cep: '49000000'
+                  complemento: null
+                  contato: contato@demo.exemplo.org
+                  horarios: Seg a sex, 8h às 17h
+                  recolhimentoDomiciliar: true
+                materiais:
+                - pontoId: 1
+                  materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  orientacaoPreparo: Mantenha o papel seco.
+                  observacoes: Papel seco.
+                  limitePorSolicitacao: 10
+        '404':
+          description: 'Ponto não encontrado(a): 999999'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: REGISTRO_NAO_ENCONTRADO
+                mensagem: 'Ponto não encontrado(a): 999999'
+                errosCampos: []
+  /api/v1/publico/materiais:
+    get:
+      tags:
+      - Consulta pública
+      summary: Lista os materiais ativos, por nome, com unidade e orientação de preparo
+      operationId: listarMateriais
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponseMaterialResponse'
+              example:
+                content:
+                - id: 1
+                  nome: Papel
+                  descricao: Papel reciclável
+                  unidade: KG
+                  orientacaoPreparo: Mantenha o papel seco.
+                  ativo: true
+                page: 0
+                size: 1
+                totalElements: 2
+                totalPages: 2
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: size
+                  mensagem: deve estar entre 1 e 100
+  /api/v1/pontos/{pontoId}/materiais:
+    get:
+      tags:
+      - Materiais aceitos
+      summary: Lista os materiais aceitos pelo ponto, por nome, com unidade, orientação e limite
+      operationId: listar_5
+      parameters:
+      - name: pontoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponsePontoMaterialResponse'
+              example:
+                content:
+                - pontoId: 1
+                  materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  orientacaoPreparo: Mantenha o papel seco.
+                  observacoes: Papel seco.
+                  limitePorSolicitacao: 10
+                page: 0
+                size: 1
+                totalElements: 1
+                totalPages: 1
+        '400':
+          description: Revise os campos informados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ENTRADA_INVALIDA
+                mensagem: Revise os campos informados.
+                errosCampos:
+                - campo: size
+                  mensagem: deve estar entre 1 e 100
+  /api/v1/indicadores/solicitacoes:
+    get:
+      tags:
+      - Indicadores
+      summary: Conta as solicitações por situação atual e período de criação
+      description: Início inclusivo, fim exclusivo. Datas em ISO 8601 com offset.
+      operationId: solicitacoes
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      - name: inicio
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+        example: '2026-11-10T23:34:31Z'
+      - name: fim
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+        example: '2026-11-12T23:34:31Z'
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SolicitacoesPorSituacaoResponse'
+              example:
+              - situacao: SOLICITADA
+                total: 0
+              - situacao: AGENDADA
+                total: 0
+              - situacao: RECUSADA
+                total: 1
+              - situacao: CANCELADA
+                total: 1
+              - situacao: EM_RECOLHIMENTO
+                total: 0
+              - situacao: CONCLUIDA
+                total: 1
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+  /api/v1/indicadores/recolhimentos:
+    get:
+      tags:
+      - Indicadores
+      summary: Soma os efetivos por material e unidade copiada, pela data de conclusão
+      description: Considera somente solicitações concluídas. Início inclusivo, fim exclusivo.
+      operationId: recolhimentos
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: ADMINISTRADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+      - name: inicio
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+        example: '2026-11-10T23:34:31Z'
+      - name: fim
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+        example: '2026-11-12T23:34:31Z'
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+        example: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+          minimum: 1
+          maximum: 100
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaResponseRecolhimentoPorMaterialResponse'
+              example:
+                content:
+                - materialId: 1
+                  nomeMaterial: Papel
+                  unidade: KG
+                  quantidadeEfetiva: 2.5
+                page: 0
+                size: 1
+                totalElements: 1
+                totalPages: 1
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+  /api/v1/demo/atores:
+    get:
+      tags:
+      - Contexto de demonstração
+      summary: Lista os atores fictícios que o front pode selecionar (só no perfil demo)
+      operationId: atores
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContextoResponse'
+              example:
+              - tipo: ADMINISTRADOR
+                id: null
+                nome: Administrador
+                pontoIds: []
+              - tipo: MORADOR
+                id: 1
+                nome: Maria Demonstração
+                pontoIds: []
+              - tipo: OPERADOR
+                id: 1
+                nome: Ana Operadora (ponto A)
+                pontoIds:
+                - 1
+              - tipo: OPERADOR
+                id: 2
+                nome: Bruno Operador (ponto B)
+                pontoIds:
+                - 2
+        '404':
+          description: Recurso não encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ROTA_NAO_ENCONTRADA
+                mensagem: Recurso não encontrado.
+                errosCampos: []
+  /api/v1/contexto:
+    get:
+      tags:
+      - Contexto de demonstração
+      summary: Mostra quem é o ator dos cabeçalhos X-Ator-Tipo e X-Ator-Id e seus pontos
+      description: Ator ausente, desconhecido ou inativo responde 403 ACESSO_NEGADO
+      operationId: atual
+      parameters:
+      - name: X-Ator-Tipo
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - ADMINISTRADOR
+          - MORADOR
+          - OPERADOR
+        description: Contexto fictício. Use o papel permitido pela operação.
+        example: OPERADOR
+      - name: X-Ator-Id
+        in: header
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Obrigatório para MORADOR e OPERADOR. Consulte /api/v1/demo/atores.
+        example: 1
+      responses:
+        '200':
+          description: Operação concluída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContextoResponse'
+              example:
+                tipo: OPERADOR
+                id: 1
+                nome: Ana Operadora (ponto A)
+                pontoIds:
+                - 1
+        '403':
+          description: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroResponse'
+              example:
+                codigo: ACESSO_NEGADO
+                mensagem: Selecione um ator de demonstração válido (X-Ator-Tipo e X-Ator-Id).
+                errosCampos: []
+components:
+  schemas:
+    ItemSolicitacaoRequest:
+      type: object
+      description: Material e quantidade estimada de um item da solicitação
+      properties:
+        materialId:
+          type: integer
+          format: int64
+          example: 2
+        quantidadeEstimada:
+          type: number
+          description: Maior que zero, na unidade do material; inteira para UNIDADE
+          example: 2.5
+      required:
+      - materialId
+      - quantidadeEstimada
+    SolicitacaoCorrecaoRequest:
+      type: object
+      description: Correção de endereço e itens, permitida só em SOLICITADA. A lista substitui todos os itens
+      properties:
+        versao:
+          type: integer
+          format: int64
+          description: Versão que o cliente leu; se estiver desatualizada, 409 CONFLITO_VERSAO
+          example: 0
+          minimum: 0
+        enderecoId:
+          type: integer
+          format: int64
+          description: Endereço do próprio morador
+          example: 1
+        itens:
+          type: array
+          description: Nova lista completa de itens
+          items:
+            $ref: '#/components/schemas/ItemSolicitacaoRequest'
+          minItems: 1
+      required:
+      - enderecoId
+      - itens
+      - versao
+    EnderecoCopiado:
+      type: object
+      description: Cópia do endereço no momento da solicitação; não muda se o cadastro mudar
+      properties:
+        enderecoId:
+          type: integer
+          format: int64
+          description: Cadastro de onde a cópia foi tirada
+          example: 1
+        logradouro:
+          type: string
+          example: Rua das Flores
+        numero:
+          type: string
+          example: '200'
+        semNumero:
+          type: boolean
+          example: false
+        bairro:
+          type: string
+          example: Centro
+        municipio:
+          type: string
+          example: Cidade Teste
+        uf:
+          type: string
+          example: SE
+        cep:
+          type: string
+          example: '49000000'
+        complemento:
+          type: string
+          example: Apto 2
+    Historico:
+      type: object
+      description: 'Alteração registrada: situação anterior e nova, data, responsável e motivo'
+      properties:
+        situacaoAnterior:
+          type:
+          - string
+          - 'null'
+          description: Nulo na criação
+          enum:
+          - SOLICITADA
+          - AGENDADA
+          - RECUSADA
+          - CANCELADA
+          - EM_RECOLHIMENTO
+          - CONCLUIDA
+          - null
+        situacaoNova:
+          type: string
+          enum:
+          - SOLICITADA
+          - AGENDADA
+          - RECUSADA
+          - CANCELADA
+          - EM_RECOLHIMENTO
+          - CONCLUIDA
+          example: SOLICITADA
+        ocorridoEm:
+          type: string
+          format: date-time
+          example: '2026-11-11T17:30:00Z'
+        responsavelTipo:
+          type: string
+          enum:
+          - MORADOR
+          - OPERADOR
+          - ADMIN
+          example: MORADOR
+        responsavelId:
+          type: integer
+          format: int64
+          example: 1
+        motivo:
+          type:
+          - string
+          - 'null'
+          description: Na correção, guarda o endereço e os itens anteriores
+        agendamentoNovo:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Nova data, quando a alteração agenda ou reagenda
+    Item:
+      type: object
+      description: Item da solicitação, com a unidade copiada do material
+      properties:
+        materialId:
+          type: integer
+          format: int64
+          example: 2
+        nomeMaterial:
+          type: string
+          example: Vidro
+        unidade:
+          type: string
+          enum:
+          - KG
+          - LITRO
+          - UNIDADE
+          example: KG
+        quantidadeEstimada:
+          type: number
+          example: 2.5
+        quantidadeEfetiva:
+          type:
+          - number
+          - 'null'
+          description: Nulo até a conclusão
+    SolicitacaoResponse:
+      type: object
+      description: Solicitação com as cópias do endereço e das unidades, os itens e o histórico
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        protocolo:
+          type: string
+          example: CS-20261111-K7P3QX
+        situacao:
+          type: string
+          enum:
+          - SOLICITADA
+          - AGENDADA
+          - RECUSADA
+          - CANCELADA
+          - EM_RECOLHIMENTO
+          - CONCLUIDA
+          example: SOLICITADA
+        versao:
+          type: integer
+          format: int64
+          description: Enviar de volta nas alterações
+          example: 0
+        criadaEm:
+          type: string
+          format: date-time
+          example: '2026-11-11T17:30:00Z'
+        agendadaPara:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Nulo até o agendamento
+          example: '2026-11-15T12:00:00Z'
+        concluidaEm:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Nulo até a conclusão
+        moradorId:
+          type: integer
+          format: int64
+          example: 1
+        pontoId:
+          type: integer
+          format: int64
+          example: 1
+        endereco:
+          $ref: '#/components/schemas/EnderecoCopiado'
+        observacoes:
+          type:
+          - string
+          - 'null'
+          example: Portão azul, tocar a campainha
+        itens:
+          type: array
+          description: Ordenados pelo nome do material
+          items:
+            $ref: '#/components/schemas/Item'
+        historico:
+          type: array
+          description: Em ordem cronológica
+          items:
+            $ref: '#/components/schemas/Historico'
+    PontoMaterialRequest:
+      type: object
+      description: Observações e limite opcional de um material aceito pelo ponto
+      properties:
+        observacoes:
+          type: string
+          description: Observações opcionais para quem vai separar o material
+          example: Somente garrafas
+        limitePorSolicitacao:
+          type: number
+          description: Limite opcional por solicitação, na unidade do material; maior que zero e inteiro para UNIDADE.
+            Ausente significa sem limite
+          example: 10.5
+    PontoMaterialResponse:
+      type: object
+      description: Material aceito por um ponto, com os dados que o formulário de solicitação precisa
+      properties:
+        pontoId:
+          type: integer
+          format: int64
+          example: 1
+        materialId:
+          type: integer
+          format: int64
+          example: 2
+        nomeMaterial:
+          type: string
+          example: Vidro
+        unidade:
+          type: string
+          enum:
+          - KG
+          - LITRO
+          - UNIDADE
+          example: KG
+        orientacaoPreparo:
+          type: string
+          example: Lavar e separar por cor
+        observacoes:
+          type: string
+          example: Somente garrafas
+        limitePorSolicitacao:
+          type: number
+          description: Nulo quando não há limite
+          example: 10.5
+    PontoRequest:
+      type: object
+      description: Dados para cadastrar ou atualizar um ponto de coleta
+      properties:
+        nome:
+          type: string
+          description: Nome do ponto
+          example: Ecoponto Centro
+          maxLength: 120
+          minLength: 0
+        logradouro:
+          type: string
+          description: Rua, avenida ou similar
+          example: Rua das Flores
+          maxLength: 150
+          minLength: 0
+        numero:
+          type: string
+          description: Número do imóvel; vazio quando semNumero é verdadeiro
+          example: '120'
+          maxLength: 10
+          minLength: 0
+        semNumero:
+          type: boolean
+          description: Verdadeiro quando o imóvel não tem número; ausente vale falso
+          example: false
+        bairro:
+          type: string
+          description: Bairro
+          example: Centro
+          maxLength: 80
+          minLength: 0
+        municipio:
+          type: string
+          description: Município
+          example: Cidade Teste
+          maxLength: 80
+          minLength: 0
+        uf:
+          type: string
+          description: Sigla da UF, 2 letras
+          example: SE
+          minLength: 1
+          pattern: '[A-Za-z]{2}'
+        cep:
+          type: string
+          description: CEP com 8 dígitos, só números
+          example: '49000000'
+          minLength: 1
+          pattern: \d{8}
+        complemento:
+          type: string
+          description: Complemento, opcional
+          example: Galpão 2
+          maxLength: 80
+          minLength: 0
+        contato:
+          type: string
+          description: Contato do ponto, opcional
+          example: ecoponto@exemplo.org
+          maxLength: 120
+          minLength: 0
+        horarios:
+          type: string
+          description: Horários de funcionamento, texto livre, opcional
+          example: Seg a sex, 8h às 17h
+        recolhimentoDomiciliar:
+          type: boolean
+          description: Verdadeiro se o ponto faz recolhimento domiciliar
+          example: true
+      required:
+      - bairro
+      - cep
+      - logradouro
+      - municipio
+      - nome
+      - recolhimentoDomiciliar
+      - uf
+    PontoResponse:
+      type: object
+      description: Ponto de coleta cadastrado, incluindo sua situação atual
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Identificador do ponto
+          example: 1
+        nome:
+          type: string
+          description: Nome do ponto
+          example: Ecoponto Centro
+        logradouro:
+          type: string
+          description: Rua, avenida ou similar
+          example: Rua das Flores
+        numero:
+          type: string
+          description: Número do imóvel; nulo quando semNumero é verdadeiro
+          example: '120'
+        semNumero:
+          type: boolean
+          description: Verdadeiro quando o imóvel não tem número
+          example: false
+        bairro:
+          type: string
+          description: Bairro
+          example: Centro
+        municipio:
+          type: string
+          description: Município
+          example: Cidade Teste
+        uf:
+          type: string
+          description: Sigla da UF em maiúsculas
+          example: SE
+        cep:
+          type: string
+          description: CEP com 8 dígitos, só números
+          example: '49000000'
+        complemento:
+          type:
+          - string
+          - 'null'
+          description: Complemento, quando informado
+          example: Galpão 2
+        contato:
+          type:
+          - string
+          - 'null'
+          description: Contato do ponto, quando informado
+          example: ecoponto@exemplo.org
+        horarios:
+          type:
+          - string
+          - 'null'
+          description: Horários de funcionamento, quando informados
+          example: Seg a sex, 8h às 17h
+        recolhimentoDomiciliar:
+          type: boolean
+          description: Verdadeiro se o ponto faz recolhimento domiciliar
+          example: true
+        ativo:
+          type: boolean
+          description: Falso após a inativação; o registro é preservado
+          example: true
+    OperadorRequest:
+      type: object
+      description: Dados para cadastrar ou atualizar um operador de ponto
+      properties:
+        nome:
+          type: string
+          example: Ana Operadora
+          maxLength: 120
+          minLength: 0
+        email:
+          type: string
+          format: email
+          description: E-mail único; é normalizado (minúsculo, sem espaços) antes da gravação
+          example: ana@exemplo.org
+          maxLength: 160
+          minLength: 0
+      required:
+      - email
+      - nome
+    OperadorResponse:
+      type: object
+      description: Operador cadastrado e os pontos aos quais está vinculado
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        nome:
+          type: string
+          example: Ana Operadora
+        email:
+          type: string
+          example: ana@exemplo.org
+        ativo:
+          type: boolean
+          example: true
+        pontos:
+          type: array
+          description: Pontos vinculados, ordenados por id
+          items:
+            $ref: '#/components/schemas/PontoVinculado'
+    PontoVinculado:
+      type: object
+      description: Ponto ao qual o operador está vinculado
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        nome:
+          type: string
+          example: Ecoponto Centro
+    EnderecoRequest:
+      type: object
+      description: Dados para cadastrar ou atualizar um endereço de morador
+      properties:
+        logradouro:
+          type: string
+          description: Rua, avenida ou similar
+          example: Rua das Flores
+          maxLength: 150
+          minLength: 0
+        numero:
+          type: string
+          description: Número do imóvel, texto por causa de casos como 10A; vazio quando semNumero é verdadeiro
+          example: '120'
+          maxLength: 10
+          minLength: 0
+        semNumero:
+          type: boolean
+          description: Verdadeiro quando o imóvel não tem número; ausente vale falso
+          example: false
+        bairro:
+          type: string
+          description: Bairro
+          example: Centro
+          maxLength: 80
+          minLength: 0
+        municipio:
+          type: string
+          description: Município
+          example: Cidade Teste
+          maxLength: 80
+          minLength: 0
+        uf:
+          type: string
+          description: Sigla da UF, 2 letras
+          example: SE
+          minLength: 1
+          pattern: '[A-Za-z]{2}'
+        cep:
+          type: string
+          description: CEP com 8 dígitos, só números
+          example: '49000000'
+          minLength: 1
+          pattern: \d{8}
+        complemento:
+          type: string
+          description: Complemento, opcional
+          example: Apto 2
+          maxLength: 80
+          minLength: 0
+      required:
+      - bairro
+      - cep
+      - logradouro
+      - municipio
+      - uf
+    EnderecoResponse:
+      type: object
+      description: Endereço cadastrado de um morador
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Identificador do endereço
+          example: 1
+        moradorId:
+          type: integer
+          format: int64
+          description: Identificador do morador proprietário do endereço
+          example: 1
+        logradouro:
+          type: string
+          description: Rua, avenida ou similar
+          example: Rua das Flores
+        numero:
+          type: string
+          description: Número do imóvel; nulo quando semNumero é verdadeiro
+          example: '120'
+        semNumero:
+          type: boolean
+          description: Verdadeiro quando o imóvel não tem número
+          example: false
+        bairro:
+          type: string
+          description: Bairro
+          example: Centro
+        municipio:
+          type: string
+          description: Município
+          example: Cidade Teste
+        uf:
+          type: string
+          description: Sigla da UF em maiúsculas
+          example: SE
+        cep:
+          type: string
+          description: CEP com 8 dígitos, só números
+          example: '49000000'
+        complemento:
+          type:
+          - string
+          - 'null'
+          description: Complemento, quando informado
+          example: Apto 2
+        ativo:
+          type: boolean
+          description: Indica se o endereço está ativo; endereços são inativados, não excluídos
+          example: true
+    MoradorRequest:
+      type: object
+      description: Dados para cadastrar ou atualizar um morador
+      properties:
+        nome:
+          type: string
+          description: Nome do morador
+          example: Maria Souza
+          maxLength: 120
+          minLength: 0
+        email:
+          type: string
+          format: email
+          description: E-mail único do morador; é normalizado (minúsculo, sem espaços) antes da gravação
+          example: maria@exemplo.com
+          maxLength: 160
+          minLength: 0
+        telefone:
+          type: string
+          description: Telefone, opcional
+          example: '79999990000'
+          maxLength: 20
+          minLength: 0
+      required:
+      - email
+      - nome
+    MoradorResponse:
+      type: object
+      description: Morador cadastrado
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Identificador do morador
+          example: 1
+        nome:
+          type: string
+          description: Nome do morador
+          example: Maria Souza
+        email:
+          type: string
+          description: E-mail do morador, já normalizado
+          example: maria@exemplo.com
+        telefone:
+          type:
+          - string
+          - 'null'
+          description: Telefone, quando informado
+          example: '79999990000'
+        ativo:
+          type: boolean
+          description: Indica se o morador está ativo; moradores são inativados, não excluídos
+          example: true
+    MaterialRequest:
+      type: object
+      description: Dados para cadastrar ou atualizar um material; a situação é alterada em operação própria
+      properties:
+        nome:
+          type: string
+          description: Nome único, ignorando maiúsculas e espaços nas pontas
+          example: Papel
+          maxLength: 80
+          minLength: 0
+        descricao:
+          type: string
+          description: Descrição opcional
+          example: Papel e papelão secos
+        unidade:
+          type: string
+          description: KG e LITRO permitem fração; UNIDADE exige quantidades inteiras
+          enum:
+          - KG
+          - LITRO
+          - UNIDADE
+          example: KG
+        orientacaoPreparo:
+          type: string
+          description: Orientação opcional de preparo
+          example: Separar limpo e seco
+      required:
+      - nome
+      - unidade
+    MaterialResponse:
+      type: object
+      description: Material cadastrado, incluindo sua situação atual
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        nome:
+          type: string
+          example: Papel
+        descricao:
+          type:
+          - string
+          - 'null'
+          example: Papel e papelão secos
+        unidade:
+          type: string
+          enum:
+          - KG
+          - LITRO
+          - UNIDADE
+          example: KG
+        orientacaoPreparo:
+          type:
+          - string
+          - 'null'
+          example: Separar limpo e seco
+        ativo:
+          type: boolean
+          description: Falso após a inativação; o registro e seus vínculos são preservados
+          example: true
+    SolicitacaoRequest:
+      type: object
+      description: Dados para criar uma solicitação. O morador vem do contexto (X-Ator-Tipo e X-Ator-Id)
+      properties:
+        enderecoId:
+          type: integer
+          format: int64
+          description: Endereço do próprio morador
+          example: 1
+        pontoId:
+          type: integer
+          format: int64
+          description: Ponto ativo com recolhimento domiciliar
+          example: 1
+        observacoes:
+          type: string
+          example: Portão azul, tocar a campainha
+        itens:
+          type: array
+          description: Pelo menos um item; cada material aparece uma vez só
+          items:
+            $ref: '#/components/schemas/ItemSolicitacaoRequest'
+          minItems: 1
+      required:
+      - enderecoId
+      - itens
+      - pontoId
+    SolicitacaoReagendamentoRequest:
+      type: object
+      properties:
+        versao:
+          type: integer
+          format: int64
+          example: 2
+          minimum: 0
+        agendadaPara:
+          type: string
+          format: date-time
+          example: '2026-12-02T14:30:00-03:00'
+        motivo:
+          type: string
+          example: Portão fechado na tentativa de recolhimento
+          minLength: 1
+      required:
+      - agendadaPara
+      - motivo
+      - versao
+    SolicitacaoEncerramentoRequest:
+      type: object
+      properties:
+        versao:
+          type: integer
+          format: int64
+          example: 0
+          minimum: 0
+        motivo:
+          type: string
+          example: Solicitação duplicada
+          minLength: 1
+      required:
+      - motivo
+      - versao
+    SolicitacaoInicioRequest:
+      type: object
+      properties:
+        versao:
+          type: integer
+          format: int64
+          example: 1
+          minimum: 0
+      required:
+      - versao
+    ItemRequest:
+      type: object
+      properties:
+        materialId:
+          type: integer
+          format: int64
+          example: 1
+          exclusiveMinimum: 0
+        quantidadeEfetiva:
+          type: number
+          description: Pode ser zero quando o item não foi recolhido
+          example: 2.5
+      required:
+      - materialId
+      - quantidadeEfetiva
+    SolicitacaoConclusaoRequest:
+      type: object
+      properties:
+        versao:
+          type: integer
+          format: int64
+          example: 2
+          minimum: 0
+        itens:
+          type: array
+          description: Quantidade efetiva de cada material da solicitação
+          items:
+            $ref: '#/components/schemas/ItemRequest'
+          minItems: 1
+      required:
+      - itens
+      - versao
+    SolicitacaoAgendamentoRequest:
+      type: object
+      properties:
+        versao:
+          type: integer
+          format: int64
+          example: 0
+          minimum: 0
+        agendadaPara:
+          type: string
+          format: date-time
+          example: '2026-12-01T14:30:00-03:00'
+      required:
+      - agendadaPara
+      - versao
+    PontoSituacaoRequest:
+      type: object
+      description: Inativa ou reativa um ponto de coleta, sem excluir registros
+      properties:
+        ativo:
+          type: boolean
+          description: Falso para inativar; verdadeiro para reativar
+          example: false
+      required:
+      - ativo
+    MoradorSituacaoRequest:
+      type: object
+      properties:
+        ativo:
+          type: boolean
+          description: Falso para inativar e verdadeiro para reativar
+          example: false
+      required:
+      - ativo
+    MaterialSituacaoRequest:
+      type: object
+      description: Inativa ou reativa um material, sem excluir registros ou vínculos
+      properties:
+        ativo:
+          type: boolean
+          description: Falso para inativar; verdadeiro para reativar
+          example: false
+      required:
+      - ativo
+    PaginaResponseSolicitacaoResumoResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/SolicitacaoResumoResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    SolicitacaoResumoResponse:
+      type: object
+      description: Linha da lista de solicitações; itens, endereço e histórico ficam no detalhe
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        protocolo:
+          type: string
+          example: CS-20261111-K7P3QX
+        situacao:
+          type: string
+          enum:
+          - SOLICITADA
+          - AGENDADA
+          - RECUSADA
+          - CANCELADA
+          - EM_RECOLHIMENTO
+          - CONCLUIDA
+          example: AGENDADA
+        criadaEm:
+          type: string
+          format: date-time
+          example: '2026-11-11T17:30:00Z'
+        agendadaPara:
+          type: string
+          format: date-time
+          description: Nulo até o agendamento
+          example: '2026-11-15T12:00:00Z'
+        concluidaEm:
+          type: string
+          format: date-time
+          description: Nulo até a conclusão
+        moradorId:
+          type: integer
+          format: int64
+          example: 1
+        pontoId:
+          type: integer
+          format: int64
+          example: 1
+        nomePonto:
+          type: string
+          example: Ecoponto Centro
+    PaginaResponsePontoPublicoResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PontoPublicoResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PontoPublicoResponse:
+      type: object
+      description: Ponto de coleta ativo, como aparece na consulta pública
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        nome:
+          type: string
+          example: Ecoponto Centro
+        logradouro:
+          type: string
+          example: Rua das Flores
+        numero:
+          type: string
+          description: Nulo quando semNumero é verdadeiro
+          example: '120'
+        semNumero:
+          type: boolean
+          example: false
+        bairro:
+          type: string
+          example: Centro
+        municipio:
+          type: string
+          example: Cidade Teste
+        uf:
+          type: string
+          example: SE
+        cep:
+          type: string
+          example: '49000000'
+        complemento:
+          type:
+          - string
+          - 'null'
+          example: Galpão 2
+        contato:
+          type: string
+          description: Contato público do ponto
+          example: ecoponto@exemplo.org
+        horarios:
+          type: string
+          example: Seg a sex, 8h às 17h
+        recolhimentoDomiciliar:
+          type: boolean
+          description: 'Falso: o ponto recebe materiais, mas não oferece coleta em casa'
+          example: true
+    PontoPublicoDetalheResponse:
+      type: object
+      description: Detalhe público de um ponto ativo com seus materiais aceitos
+      properties:
+        ponto:
+          $ref: '#/components/schemas/PontoPublicoResponse'
+        materiais:
+          type: array
+          description: Materiais ativos aceitos, ordenados por nome
+          items:
+            $ref: '#/components/schemas/PontoMaterialResponse'
+    PaginaResponseMaterialResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PaginaResponsePontoResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PontoResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PaginaResponsePontoMaterialResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PontoMaterialResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PaginaResponseOperadorResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperadorResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PaginaResponseEnderecoResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnderecoResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    SolicitacoesPorSituacaoResponse:
+      type: object
+      properties:
+        situacao:
+          type: string
+          enum:
+          - SOLICITADA
+          - AGENDADA
+          - RECUSADA
+          - CANCELADA
+          - EM_RECOLHIMENTO
+          - CONCLUIDA
+          example: CONCLUIDA
+        total:
+          type: integer
+          format: int64
+          description: Número de solicitações na situação atual
+          example: 4
+    PaginaResponseRecolhimentoPorMaterialResponse:
+      type: object
+      description: Página de resultados
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecolhimentoPorMaterialResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    RecolhimentoPorMaterialResponse:
+      type: object
+      properties:
+        materialId:
+          type: integer
+          format: int64
+          example: 1
+        nomeMaterial:
+          type: string
+          example: Vidro
+        unidade:
+          type: string
+          description: Unidade copiada no item da solicitação
+          enum:
+          - KG
+          - LITRO
+          - UNIDADE
+          example: KG
+        quantidadeEfetiva:
+          type: number
+          description: Soma das quantidades efetivas concluídas no período
+          example: 5.75
+    ContextoResponse:
+      type: object
+      description: Ator de demonstração resolvido pelo backend. Simulação, não autenticação
+      properties:
+        tipo:
+          type: string
+          enum:
+          - MORADOR
+          - OPERADOR
+          - ADMINISTRADOR
+          example: OPERADOR
+        id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Nulo para o administrador
+          example: 1
+        nome:
+          type: string
+          example: Ana Operadora
+        pontoIds:
+          type: array
+          description: Pontos do operador, ordenados; vazio para os outros atores
+          items:
+            type: integer
+            format: int64
+    ErroResponse:
+      type: object
+      required:
+      - codigo
+      - mensagem
+      - errosCampos
+      properties:
+        codigo:
+          type: string
+        mensagem:
+          type: string
+        errosCampos:
+          type: array
+          items:
+            type: object
+            properties:
+              campo:
+                type: string
+              mensagem:
+                type: string

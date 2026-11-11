@@ -2,6 +2,52 @@
 
 API acadêmica de Programação Web I para conectar moradores, pontos de coleta e operadores de recolhimento de recicláveis.
 
+## Versões e reprodução com Docker
+
+| Componente | Versão do projeto |
+| --- | --- |
+| Java | 21 |
+| Spring Boot | 4.1.2 |
+| Maven Wrapper | Maven 3.10.0 |
+| PostgreSQL | 17 (imagem `postgres:17`) |
+| SpringDoc OpenAPI | 3.2.0 |
+
+Para reproduzir no Linux, macOS ou WSL, instale o JDK 21, Git e Docker com o
+plugin Compose. Os roteiros de validação usam Python 3. A partir da raiz
+do repositório, execute:
+
+```bash
+cd coleta-seletiva-api
+test -f .env || cp .env.example .env
+```
+
+Em uma instalação nova, defina uma senha local no `.env` antes de subir o banco.
+As credenciais devem coincidir com as do banco se o volume já estiver inicializado.
+
+```bash
+docker compose up -d --wait db
+set -a
+. ./.env
+set +a
+./mvnw spring-boot:run -Dspring-boot.run.profiles=demo
+```
+
+O Compose disponibiliza o banco na porta local 5433. O Flyway aplica as
+migrações de `src/main/resources/db/migration` ao iniciar e o Hibernate valida o
+esquema. A API fica disponível na porta 8080. Em outro terminal, consulte os
+atores fictícios e teste o contexto administrativo:
+
+```bash
+curl --fail-with-body http://localhost:8080/api/v1/demo/atores
+curl --fail-with-body -H 'X-Ator-Tipo: ADMINISTRADOR' http://localhost:8080/api/v1/contexto
+```
+
+Para usar `MORADOR` ou `OPERADOR`, envie também `X-Ator-Id` com o `id`
+retornado para o ator escolhido. O contexto serve para demonstração local.
+Para testar um reinício, encerre a aplicação com `Ctrl+C` e repita o comando
+do Maven mantendo o mesmo banco. Para parar o banco ao terminar, execute
+`docker compose down` na pasta da API. O volume do Compose é preservado.
+
 ## Pré-requisitos
 
 - **JDK 21** instalado e configurado no ambiente.
@@ -100,3 +146,26 @@ Isso é simulação, não autenticação: use só em ambiente local. Detalhes em
 - [ ] Maven Wrapper executado com Java 21.
 - [ ] Testes concluídos com sucesso.
 - [ ] Aplicação iniciada e conectada ao PostgreSQL.
+
+## Documentação e evidências da primeira unidade
+
+- [OpenAPI versionado](docs/openapi.yaml) com exemplos HTTP capturados da API.
+  Com o servidor rodando, consulte o Swagger UI em
+  [localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) e a
+  especificação gerada pelo SpringDoc em
+  [localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs).
+- [Relatório da primeira unidade](docs/evidencias/api-18-entrega.md) com DER,
+  decisões, roteiro de aceite, persistência e desempenho.
+
+Com as APIs 13, 16 e 17 integradas, execute da raiz para gerar e medir a carga
+de 1.000 solicitações fictícias em um PostgreSQL descartável:
+
+```bash
+python3 -B coleta-seletiva-api/scripts/desempenho_api.py
+```
+
+O roteiro inicia a aplicação duas vezes no mesmo banco, confere dados e
+indicadores e mede o p95 de cinco consultas HTTP. Se já executou o aceite da
+API-17 no mesmo checkout e o JAR está atualizado, acrescente
+`--usar-jar-existente`. Neste notebook, rode o comando com o limitador indicado
+em [Como contribuir](CONTRIBUTING.md#validações-neste-notebook).
